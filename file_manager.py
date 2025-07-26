@@ -1,41 +1,40 @@
-"""Simple folder manager GUI implemented with PyQt5.
-
-This version replaces the previous Tk based implementation and keeps the same
-features such as drag and drop sorting, context menu actions and remembering
-the last opened directory.
-"""
-
 from __future__ import annotations
 
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-
 CONFIG_FILE = "last_state.json"
 
+class MyButton(QtWidgets.QPushButton):
+    doubleClicked = QtCore.pyqtSignal()
+    def mouseDoubleClickEvent(self, event):
+        self.doubleClicked.emit()
+        super().mouseDoubleClickEvent(event)
 
 class SortListWidget(QtWidgets.QListWidget):
-    """QListWidget with a signal emitted after items are dropped."""
-
     itemDropped = QtCore.pyqtSignal()
-
-    def dropEvent(self, event: QtGui.QDropEvent) -> None:  # type: ignore[override]
+    def dropEvent(self, event: QtGui.QDropEvent) -> None:
         super().dropEvent(event)
         self.itemDropped.emit()
 
-
 class FileManagerApp(QtWidgets.QWidget):
-    """Main application window."""
-
     def __init__(self) -> None:
         super().__init__()
+        self.setAcceptDrops(True)
         self.sort_paused = True
         self._setup_ui()
+        self._setup_blur_overlay()
+
+        self._last_folder_list = []
+        self._timer = QtCore.QTimer(self)
+        self._timer.timeout.connect(self._auto_refresh_folder_list)
+        self._timer.start(1000)
 
         last_state = self._load_last_state()
         initial_path = (last_state or {}).get("last_path", "")
@@ -43,10 +42,49 @@ class FileManagerApp(QtWidgets.QWidget):
             self.path_edit.setText(initial_path)
             if os.path.exists(initial_path):
                 self._refresh_list(initial_path)
-
         self._pause_sort()
 
-    # ------------------------------------------------------------------ utils
+    def _auto_refresh_folder_list(self):
+        base_path = self.path_edit.text()
+        if not os.path.isdir(base_path):
+            return
+        try:
+            folders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
+            folders.sort()
+        except Exception:
+            folders = []
+        if folders != self._last_folder_list:
+            self._refresh_list(base_path)
+
+    def _setup_blur_overlay(self):
+        parent = self.list_widget.parentWidget()
+        self.blur_overlay = QtWidgets.QWidget(parent)
+        self._update_blur_geometry()
+        self.blur_overlay.lower()
+        self.blur_overlay.hide()
+        self.blur_overlay.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        blur = QtWidgets.QGraphicsBlurEffect()
+        blur.setBlurRadius(16)
+        self.blur_overlay.setGraphicsEffect(blur)
+        self.list_widget.installEventFilter(self)
+
+    def _update_blur_geometry(self):
+        self.blur_overlay.setGeometry(self.list_widget.geometry())
+
+    def eventFilter(self, obj, event):
+        if obj is self.list_widget and event.type() == QtCore.QEvent.Resize:
+            self._update_blur_geometry()
+        return super().eventFilter(obj, event)
+
+    def _show_blur(self, color):
+        self._update_blur_geometry()
+        self.blur_overlay.setStyleSheet(f"background: {color}; border-radius: 9px;")
+        self.blur_overlay.show()
+        self.blur_overlay.raise_()
+
+    def _hide_blur(self):
+        self.blur_overlay.hide()
+
     def _save_last_state(self, path: str) -> None:
         with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
             json.dump({"last_path": path}, fh)
@@ -57,23 +95,80 @@ class FileManagerApp(QtWidgets.QWidget):
                 return json.load(fh)
         return None
 
-    # --------------------------------------------------------------------- UI
     def _setup_ui(self) -> None:
+        font = QtGui.QFont("微软雅黑", 14)
+        self.setFont(font)
+        self.setStyleSheet("""
+            QWidget { background: #f7fafd; }
+            QLineEdit {
+                border-radius: 4px; padding: 5px 8px;
+                border: 1px solid #b7bec7; background: #fff;
+                font-size: 20px;
+                min-height: 40px;
+            }
+            QPushButton {
+                border-radius: 4px; background: #3794ff;
+                color: white; padding: 5px 16px;
+                font-size: 18px; font-weight: bold;
+                min-height: 40px;
+            }
+            QPushButton:hover { background: #2265b5;}
+            QListWidget {
+                border-radius: 9px;
+                border: 0.7px solid #b5bac0;
+                background: #fff; font-size: 18px;
+            }
+            QListWidget::item {
+                height: 32px; border-radius: 5px; color: #222;
+            }
+            QListWidget::item:selected:active {
+                background: #3794ff; color: #fff;
+            }
+            QListWidget::item:selected:!active {
+                background: #b5c6e0; color: #222;
+            }
+            QListWidget::item:hover {
+                background: #eef5ff;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: transparent;
+                width: 10px;
+                margin: 1px 1px 1px 0;
+                border-radius: 10px;
+            }
+            QScrollBar::handle:vertical {
+                background: #3794ff;
+                min-height: 28px;
+                border: none;
+                border-radius: 7px;
+                margin: 1px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #2265b5;
+            }
+        """)
         self.setWindowTitle("文件夹排序器")
 
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(4)
+        layout.setContentsMargins(8, 8, 8, 4)
 
         path_layout = QtWidgets.QHBoxLayout()
+        path_layout.setSpacing(4)
         self.path_edit = QtWidgets.QLineEdit()
+        self.path_edit.setFont(QtGui.QFont("微软雅黑", 20))  # 地址栏专用大字体
         self.path_edit.returnPressed.connect(self._on_path_entry)
-        browse_btn = QtWidgets.QPushButton("浏览...")
-        browse_btn.clicked.connect(self._select_directory)
+        self.browse_btn = MyButton("浏览...")
+        self.browse_btn.setFont(QtGui.QFont("微软雅黑", 18))
+        self.browse_btn.clicked.connect(self._select_directory)
+        self.browse_btn.doubleClicked.connect(self._on_browse_double_clicked)
         path_layout.addWidget(self.path_edit)
-        path_layout.addWidget(browse_btn)
+        path_layout.addWidget(self.browse_btn)
         layout.addLayout(path_layout)
 
         self.list_widget = SortListWidget()
-        self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.list_widget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
         self.list_widget.itemDropped.connect(self._on_drop)
         self.list_widget.currentRowChanged.connect(self._on_select)
@@ -82,15 +177,70 @@ class FileManagerApp(QtWidgets.QWidget):
         self.list_widget.itemDoubleClicked.connect(self._open_folder_in_explorer)
         layout.addWidget(self.list_widget)
 
-    # ------------------------------------------------------------------ actions
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self.list_widget)
+        shadow.setBlurRadius(16)
+        shadow.setXOffset(0)
+        shadow.setYOffset(2)
+        shadow.setColor(QtGui.QColor(0,0,0,20))
+        self.list_widget.setGraphicsEffect(shadow)
+
+    def _on_browse_double_clicked(self):
+        cur_w, cur_h = self.width(), self.height()
+        self.resize(cur_w, cur_h * 2)
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path and os.path.isdir(path):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event: QtGui.QDropEvent):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path and os.path.isdir(path):
+                    self.path_edit.setText(path)
+                    self._save_last_state(path)
+                    self._refresh_list(path)
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
     def _refresh_list(self, base_path: str) -> None:
         self.list_widget.clear()
-        folders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
-        folders.sort()
+        try:
+            folders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
+            folders.sort()
+        except Exception:
+            folders = []
         for folder in folders:
             item = QtWidgets.QListWidgetItem(folder)
-            item.setBackground(QtGui.QColor("white"))
             self.list_widget.addItem(item)
+        n = len(folders)
+        max_show = min(n, 30)
+        row_h = self.list_widget.sizeHintForRow(0) if n else 32
+        list_h = max_show * row_h + 4
+        self.list_widget.setFixedHeight(list_h)
+        top_h = self.path_edit.sizeHint().height() + 10 + 16
+        bottom_h = 18
+        total_h = top_h + list_h + bottom_h
+        self.setFixedHeight(total_h)
+        self._last_folder_list = folders
+
+    def _select_directory(self) -> None:
+        cur_path = self.path_edit.text()
+        if cur_path and os.path.isdir(cur_path):
+            start_dir = cur_path
+        else:
+            start_dir = ""
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择文件夹路径", start_dir)
+        if path:
+            self.path_edit.setText(path)
+            self._save_last_state(path)
+            self._refresh_list(path)
 
     def _confirm_sort(self) -> None:
         base_path = self.path_edit.text()
@@ -124,7 +274,7 @@ class FileManagerApp(QtWidgets.QWidget):
         try:
             os.makedirs(os.path.join(base_path, folder_name))
             self._refresh_list(base_path)
-        except Exception as exc:  # pragma: no cover - OS errors hard to trigger
+        except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "错误", f"创建文件夹失败：{exc}")
 
     def _clear_prefix_number(self) -> None:
@@ -141,24 +291,33 @@ class FileManagerApp(QtWidgets.QWidget):
                 try:
                     os.rename(old_path, new_path)
                     changed = True
-                except Exception as exc:  # pragma: no cover - OS errors hard to trigger
+                except Exception as exc:
                     QtWidgets.QMessageBox.critical(self, "错误", f"清除序号失败：{exc}")
         if changed:
             self._refresh_list(base_path)
 
-    def _select_directory(self) -> None:
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择文件夹路径")
-        if path:
-            self.path_edit.setText(path)
-            self._save_last_state(path)
-            self._refresh_list(path)
+    def _delete_selected_folders(self):
+        items = self.list_widget.selectedItems()
+        if not items:
+            return
+        names = [item.text() for item in items]
+        msg = "确定要删除以下文件夹？\n\n" + "\n".join(names)
+        if QtWidgets.QMessageBox.question(
+            self, "确认删除", msg,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        ) != QtWidgets.QMessageBox.Yes:
+            return
+        base_path = self.path_edit.text()
+        for name in names:
+            folder_path = os.path.join(base_path, name)
+            try:
+                shutil.rmtree(folder_path)
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(self, "删除失败", f"{name} 删除失败：{e}")
+        self._refresh_list(base_path)
 
     def _on_select(self) -> None:
-        for i in range(self.list_widget.count()):
-            self.list_widget.item(i).setForeground(QtGui.QColor("black"))
-        idx = self.list_widget.currentRow()
-        if idx >= 0:
-            self.list_widget.item(idx).setForeground(QtGui.QColor("red"))
+        pass  # 不做任何颜色处理，全部交给QSS
 
     def _open_folder_in_explorer(self, item: QtWidgets.QListWidgetItem) -> None:
         folder_name = item.text()
@@ -173,10 +332,10 @@ class FileManagerApp(QtWidgets.QWidget):
                 subprocess.Popen(["xdg-open", folder_path])
 
     def _rename_selected_folder(self) -> None:
-        idx = self.list_widget.currentRow()
-        if idx < 0:
+        selected = self.list_widget.selectedItems()
+        if len(selected) != 1:
             return
-        old_name = self.list_widget.item(idx).text()
+        old_name = selected[0].text()
         base_path = self.path_edit.text()
         old_path = os.path.join(base_path, old_name)
         new_name, ok = QtWidgets.QInputDialog.getText(self, "重命名", f"将“{old_name}”重命名为：", text=old_name)
@@ -188,16 +347,16 @@ class FileManagerApp(QtWidgets.QWidget):
             try:
                 os.rename(old_path, new_path)
                 self._refresh_list(base_path)
-            except Exception as exc:  # pragma: no cover - OS errors hard to trigger
+            except Exception as exc:
                 QtWidgets.QMessageBox.critical(self, "错误", f"重命名失败：{exc}")
 
     def _pause_sort(self) -> None:
         self.sort_paused = True
-        self.list_widget.setStyleSheet("border:2px solid red;")
+        self._show_blur("rgba(255,105,180,0.10)")
 
     def _resume_sort(self) -> None:
         self.sort_paused = False
-        self.list_widget.setStyleSheet("border:2px solid green;")
+        self._show_blur("rgba(120,255,170,0.10)")
         self._confirm_sort()
 
     def _on_drop(self) -> None:
@@ -215,24 +374,32 @@ class FileManagerApp(QtWidgets.QWidget):
     def _show_context_menu(self, pos: QtCore.QPoint) -> None:
         menu = QtWidgets.QMenu(self)
         menu.addAction("新建文件夹", self._create_new_folder)
-        menu.addAction("打开目录", self._select_directory)
-        menu.addAction("重命名称", self._rename_selected_folder)
-        menu.addAction("清除序号", self._clear_prefix_number)
+        menu.addAction("选择目录", self._select_directory)
+        menu.addSeparator()
+        selected_count = len(self.list_widget.selectedItems())
+        act_rename = menu.addAction("重命名称", self._rename_selected_folder)
+        act_rename.setEnabled(selected_count == 1)
+        act_delete = menu.addAction("删除所选", self._delete_selected_folders)
+        act_delete.setEnabled(selected_count >= 1)
+        menu.addSeparator()
+        menu.addAction("清除全部序号", self._clear_prefix_number)
+        menu.addSeparator()
         if self.sort_paused:
             menu.addAction("开始排序", self._resume_sort)
         else:
             menu.addAction("暂停排序", self._pause_sort)
+        menu.setStyleSheet("""
+            QMenu { font-size:16px; }
+            QMenu::item:selected { background-color: #3794ff; color: #fff; }
+        """)
         menu.exec_(self.list_widget.mapToGlobal(pos))
-
 
 def main() -> None:
     app = QtWidgets.QApplication(sys.argv)
     window = FileManagerApp()
-    window.resize(600, 400)
+    window.resize(600, 420)
     window.show()
     sys.exit(app.exec_())
 
-
-if __name__ == "__main__":  # pragma: no cover - manual execution
+if __name__ == "__main__":
     main()
-
