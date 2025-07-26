@@ -1,89 +1,103 @@
+"""Simple folder manager GUI implemented with PyQt5.
+
+This version replaces the previous Tk based implementation and keeps the same
+features such as drag and drop sorting, context menu actions and remembering
+the last opened directory.
+"""
+
+from __future__ import annotations
+
+import json
 import os
 import re
-import tkinter as tk
-from tkinter import messagebox, filedialog, simpledialog
-import json
 import subprocess
 import sys
 
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+
 CONFIG_FILE = "last_state.json"
-DRAG_THRESHOLD = 5
 
-class FileManagerApp:
-    def __init__(self, root):
-        self.root = root
-        self.drag_data = {"item": None, "index": None, "start_x": 0, "start_y": 0}
 
-        self.selected_folder_path = tk.StringVar()
-        last_state = self.load_last_state()
-        initial_path = (last_state or {}).get("last_path", "未选择文件夹")
-        self.selected_folder_path.set(initial_path)
+class SortListWidget(QtWidgets.QListWidget):
+    """QListWidget with a signal emitted after items are dropped."""
 
-        self.root.title("文件夹排序器")
-        # self.root.overrideredirect(True)  # 已移除标题栏隐藏
+    itemDropped = QtCore.pyqtSignal()
 
-        self.content_frame = tk.Frame(root)
-        self.content_frame.pack(fill="both", expand=True)
+    def dropEvent(self, event: QtGui.QDropEvent) -> None:  # type: ignore[override]
+        super().dropEvent(event)
+        self.itemDropped.emit()
 
-        listbox_frame = tk.Frame(self.content_frame, bd=0, highlightthickness=0)
-        listbox_frame.pack(fill="both", expand=True, padx=10, pady=5)
-        self.top_line = tk.Frame(listbox_frame, height=2, bg="red")
-        self.top_line.pack(fill="x", side="top")
-        self.left_line = tk.Frame(listbox_frame, width=2, bg="red")
-        self.left_line.pack(fill="y", side="left")
-        self.right_line = tk.Frame(listbox_frame, width=2, bg="red")
-        self.right_line.pack(fill="y", side="right")
-        self.bottom_line = tk.Frame(listbox_frame, height=2, bg="red")
-        self.bottom_line.pack(fill="x", side="bottom")
 
-        self.path_entry = tk.Entry(
-            listbox_frame, textvariable=self.selected_folder_path, font=("微软雅黑", 14)
-        )
-        self.path_entry.pack(fill="x", padx=4, pady=(0, 2))
-        self.path_entry.bind("<Return>", self.on_path_entry)
+class FileManagerApp(QtWidgets.QWidget):
+    """Main application window."""
 
-        self.listbox = tk.Listbox(
-            listbox_frame, selectmode=tk.SINGLE, height=20, width=50,
-            highlightthickness=0, bd=0, font=("微软雅黑", 14)
-        )
-        self.listbox.pack(fill="both", expand=True)
+    def __init__(self) -> None:
+        super().__init__()
+        self.sort_paused = True
+        self._setup_ui()
 
-        self.listbox.bind("<Button-1>", self.on_start_drag)
-        self.listbox.bind("<B1-Motion>", self.on_drag)
-        self.listbox.bind("<ButtonRelease-1>", self.on_drop)
-        self.listbox.bind("<Button-3>", self.show_context_menu)
-        self.listbox.bind("<<ListboxSelect>>", self.on_select)
-        self.listbox.bind("<Double-Button-1>", self.open_folder_in_explorer)
+        last_state = self._load_last_state()
+        initial_path = (last_state or {}).get("last_path", "")
+        if initial_path:
+            self.path_edit.setText(initial_path)
+            if os.path.exists(initial_path):
+                self._refresh_list(initial_path)
 
-        if os.path.exists(initial_path):
-            self.refresh_listbox(initial_path)
+        self._pause_sort()
 
-        self.sort_paused = True  # 默认初始为暂停排序
+    # ------------------------------------------------------------------ utils
+    def _save_last_state(self, path: str) -> None:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
+            json.dump({"last_path": path}, fh)
 
-    def save_last_state(self, path):
-        with open(CONFIG_FILE, "w") as file:
-            json.dump({"last_path": path}, file)
-
-    def load_last_state(self):
+    def _load_last_state(self) -> dict | None:
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as file:
-                return json.load(file)
+            with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
+                return json.load(fh)
         return None
 
-    def refresh_listbox(self, base_path):
-        self.listbox.delete(0, tk.END)
+    # --------------------------------------------------------------------- UI
+    def _setup_ui(self) -> None:
+        self.setWindowTitle("文件夹排序器")
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        path_layout = QtWidgets.QHBoxLayout()
+        self.path_edit = QtWidgets.QLineEdit()
+        self.path_edit.returnPressed.connect(self._on_path_entry)
+        browse_btn = QtWidgets.QPushButton("浏览...")
+        browse_btn.clicked.connect(self._select_directory)
+        path_layout.addWidget(self.path_edit)
+        path_layout.addWidget(browse_btn)
+        layout.addLayout(path_layout)
+
+        self.list_widget = SortListWidget()
+        self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.list_widget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+        self.list_widget.itemDropped.connect(self._on_drop)
+        self.list_widget.currentRowChanged.connect(self._on_select)
+        self.list_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
+        self.list_widget.itemDoubleClicked.connect(self._open_folder_in_explorer)
+        layout.addWidget(self.list_widget)
+
+    # ------------------------------------------------------------------ actions
+    def _refresh_list(self, base_path: str) -> None:
+        self.list_widget.clear()
         folders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
         folders.sort()
         for folder in folders:
-            self.listbox.insert(tk.END, folder)
-            self.listbox.itemconfig(tk.END, {'bg': 'white'})
+            item = QtWidgets.QListWidgetItem(folder)
+            item.setBackground(QtGui.QColor("white"))
+            self.list_widget.addItem(item)
 
-    def confirm_sort(self):
-        base_path = self.selected_folder_path.get()
-        folders = list(self.listbox.get(0, tk.END))
-        used_names = set()
+    def _confirm_sort(self) -> None:
+        base_path = self.path_edit.text()
+        folders = [self.list_widget.item(i).text() for i in range(self.list_widget.count())]
+        used_names: set[str] = set()
         for i, folder_name in enumerate(folders, 1):
-            base_name = re.sub(r'^\d+_', '', folder_name)
+            base_name = re.sub(r"^\d+_", "", folder_name)
             new_name = f"{i:02d}_{base_name}"
             current_path = os.path.join(base_path, folder_name)
             new_path = os.path.join(base_path, new_name)
@@ -95,12 +109,12 @@ class FileManagerApp:
             used_names.add(new_name)
             if os.path.exists(current_path):
                 os.rename(current_path, new_path)
-        self.refresh_listbox(base_path)
+        self._refresh_list(base_path)
 
-    def create_new_folder(self):
-        base_path = self.selected_folder_path.get()
-        folder_name = tk.simpledialog.askstring("新建文件夹", "请输入文件夹名称：", initialvalue="新建")
-        if not folder_name:
+    def _create_new_folder(self) -> None:
+        base_path = self.path_edit.text()
+        folder_name, ok = QtWidgets.QInputDialog.getText(self, "新建文件夹", "请输入文件夹名称：", text="新建")
+        if not ok or not folder_name:
             return
         counter = 1
         original_name = folder_name
@@ -109,60 +123,16 @@ class FileManagerApp:
             counter += 1
         try:
             os.makedirs(os.path.join(base_path, folder_name))
-            self.refresh_listbox(base_path)
-        except Exception as e:
-            messagebox.showerror("错误", f"创建文件夹失败：{e}")
+            self._refresh_list(base_path)
+        except Exception as exc:  # pragma: no cover - OS errors hard to trigger
+            QtWidgets.QMessageBox.critical(self, "错误", f"创建文件夹失败：{exc}")
 
-    def on_start_drag(self, event):
-        index = self.listbox.nearest(event.y)
-        self.drag_data.update({
-            "start_x": event.x,
-            "start_y": event.y,
-            "item": self.listbox.get(index),
-            "index": index
-        })
-        self.listbox.itemconfig(index, {'bg': '#66FF66'})
-
-    def on_drag(self, event):
-        if abs(event.y - self.drag_data["start_y"]) > DRAG_THRESHOLD:
-            nearest_index = self.listbox.nearest(event.y)
-            if nearest_index != self.drag_data["index"]:
-                item = self.listbox.get(self.drag_data["index"])
-                self.listbox.delete(self.drag_data["index"])
-                self.listbox.insert(nearest_index, item)
-                self.drag_data["index"] = nearest_index
-            for i in range(self.listbox.size()):
-                self.listbox.itemconfig(i, {'bg': 'white'})
-            if self.drag_data["index"] is not None and self.drag_data["index"] < self.listbox.size():
-                self.listbox.itemconfig(self.drag_data["index"], {'bg': '#66FF66'})
-
-    def on_drop(self, event):
-        index = self.drag_data["index"]
-        self.drag_data.update({"item": None, "index": None})
-        if not self.sort_paused:
-            self.confirm_sort()
-        if index is not None and index < self.listbox.size():
-            self.listbox.itemconfig(index, {'bg': 'white'})
-
-    def show_context_menu(self, event):
-        menu_font = ("微软雅黑", 14)
-        context_menu = tk.Menu(self.root, tearoff=0, font=menu_font)
-        context_menu.add_command(label="新建文件", command=self.create_new_folder)
-        context_menu.add_command(label="打开目录", command=self.select_directory)
-        context_menu.add_command(label="重命名称", command=lambda: self.rename_selected_folder(event))
-        context_menu.add_command(label="清除序号", command=self.clear_prefix_number)
-        if self.sort_paused:
-            context_menu.add_command(label="开始排序", command=self.resume_sort)
-        else:
-            context_menu.add_command(label="暂停排序", command=self.pause_sort)
-        context_menu.tk_popup(event.x_root, event.y_root)
-
-    def clear_prefix_number(self, event=None):
-        base_path = self.selected_folder_path.get()
+    def _clear_prefix_number(self) -> None:
+        base_path = self.path_edit.text()
         folders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
         changed = False
         for old_name in folders:
-            new_name = re.sub(r'^\d+_?', '', old_name)
+            new_name = re.sub(r"^\d+_?", "", old_name)
             if new_name and new_name != old_name:
                 old_path = os.path.join(base_path, old_name)
                 new_path = os.path.join(base_path, new_name)
@@ -171,32 +141,28 @@ class FileManagerApp:
                 try:
                     os.rename(old_path, new_path)
                     changed = True
-                except Exception as e:
-                    messagebox.showerror("错误", f"清除序号失败：{e}")
+                except Exception as exc:  # pragma: no cover - OS errors hard to trigger
+                    QtWidgets.QMessageBox.critical(self, "错误", f"清除序号失败：{exc}")
         if changed:
-            self.refresh_listbox(base_path)
+            self._refresh_list(base_path)
 
-    def select_directory(self):
-        base_path = filedialog.askdirectory(title="选择文件夹路径")
-        if base_path:
-            self.selected_folder_path.set(base_path)
-            self.save_last_state(base_path)
-            self.refresh_listbox(base_path)
+    def _select_directory(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择文件夹路径")
+        if path:
+            self.path_edit.setText(path)
+            self._save_last_state(path)
+            self._refresh_list(path)
 
-    def on_select(self, event):
-        for i in range(self.listbox.size()):
-            self.listbox.itemconfig(i, {'fg': 'black'})
-        selection = self.listbox.curselection()
-        if selection:
-            idx = selection[0]
-            self.listbox.itemconfig(idx, {'fg': 'red'})
+    def _on_select(self) -> None:
+        for i in range(self.list_widget.count()):
+            self.list_widget.item(i).setForeground(QtGui.QColor("black"))
+        idx = self.list_widget.currentRow()
+        if idx >= 0:
+            self.list_widget.item(idx).setForeground(QtGui.QColor("red"))
 
-    def open_folder_in_explorer(self, event):
-        index = self.listbox.nearest(event.y)
-        self.listbox.selection_clear(0, tk.END)
-        self.listbox.selection_set(index)
-        folder_name = self.listbox.get(index)
-        base_path = self.selected_folder_path.get()
+    def _open_folder_in_explorer(self, item: QtWidgets.QListWidgetItem) -> None:
+        folder_name = item.text()
+        base_path = self.path_edit.text()
         folder_path = os.path.join(base_path, folder_name)
         if os.path.exists(folder_path):
             if sys.platform.startswith("win"):
@@ -206,48 +172,67 @@ class FileManagerApp:
             else:
                 subprocess.Popen(["xdg-open", folder_path])
 
-    def rename_selected_folder(self, event):
-        index = self.listbox.nearest(event.y)
-        if index < 0 or index >= self.listbox.size():
+    def _rename_selected_folder(self) -> None:
+        idx = self.list_widget.currentRow()
+        if idx < 0:
             return
-        old_name = self.listbox.get(index)
-        base_path = self.selected_folder_path.get()
+        old_name = self.list_widget.item(idx).text()
+        base_path = self.path_edit.text()
         old_path = os.path.join(base_path, old_name)
-
-        new_name = tk.simpledialog.askstring("重命名", f"将“{old_name}”重命名为：", initialvalue=old_name)
-        if new_name and new_name != old_name:
+        new_name, ok = QtWidgets.QInputDialog.getText(self, "重命名", f"将“{old_name}”重命名为：", text=old_name)
+        if ok and new_name and new_name != old_name:
             new_path = os.path.join(base_path, new_name)
             if os.path.exists(new_path):
-                messagebox.showerror("错误", "已存在同名文件夹！")
+                QtWidgets.QMessageBox.critical(self, "错误", "已存在同名文件夹！")
                 return
             try:
                 os.rename(old_path, new_path)
-                self.refresh_listbox(base_path)
-            except Exception as e:
-                messagebox.showerror("错误", f"重命名失败：{e}")
+                self._refresh_list(base_path)
+            except Exception as exc:  # pragma: no cover - OS errors hard to trigger
+                QtWidgets.QMessageBox.critical(self, "错误", f"重命名失败：{exc}")
 
-    def pause_sort(self):
+    def _pause_sort(self) -> None:
         self.sort_paused = True
-        for line in [self.top_line, self.bottom_line, self.left_line, self.right_line]:
-            line.config(bg="red")
+        self.list_widget.setStyleSheet("border:2px solid red;")
 
-    def resume_sort(self):
+    def _resume_sort(self) -> None:
         self.sort_paused = False
-        for line in [self.top_line, self.bottom_line, self.left_line, self.right_line]:
-            line.config(bg="green")
-        self.confirm_sort()
+        self.list_widget.setStyleSheet("border:2px solid green;")
+        self._confirm_sort()
 
-    def on_path_entry(self, event):
-        path = self.selected_folder_path.get()
+    def _on_drop(self) -> None:
+        if not self.sort_paused:
+            self._confirm_sort()
+
+    def _on_path_entry(self) -> None:
+        path = self.path_edit.text()
         if os.path.isdir(path):
-            self.save_last_state(path)
-            self.refresh_listbox(path)
+            self._save_last_state(path)
+            self._refresh_list(path)
         else:
-            messagebox.showerror("错误", "路径不存在！")
+            QtWidgets.QMessageBox.critical(self, "错误", "路径不存在！")
+
+    def _show_context_menu(self, pos: QtCore.QPoint) -> None:
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("新建文件夹", self._create_new_folder)
+        menu.addAction("打开目录", self._select_directory)
+        menu.addAction("重命名称", self._rename_selected_folder)
+        menu.addAction("清除序号", self._clear_prefix_number)
+        if self.sort_paused:
+            menu.addAction("开始排序", self._resume_sort)
+        else:
+            menu.addAction("暂停排序", self._pause_sort)
+        menu.exec_(self.list_widget.mapToGlobal(pos))
 
 
+def main() -> None:
+    app = QtWidgets.QApplication(sys.argv)
+    window = FileManagerApp()
+    window.resize(600, 400)
+    window.show()
+    sys.exit(app.exec_())
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = FileManagerApp(root)
-    root.mainloop()
+
+if __name__ == "__main__":  # pragma: no cover - manual execution
+    main()
+
