@@ -8,7 +8,7 @@ def main() -> None:
     try:
         import PyInstaller.__main__
     except ImportError:  # pragma: no cover - runtime guard
-        print("PyInstaller 未安装，请先运行 pip install pyinstaller", file=sys.stderr)
+        print("PyInstaller is missing. Please run `pip install pyinstaller` first.", file=sys.stderr)
         sys.exit(1)
 
     project_root = pathlib.Path(__file__).resolve().parent

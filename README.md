@@ -1,46 +1,45 @@
-# 文件夹排序器
+# Folder Flow Organizer
 
-该项目是一个基于 `PyQt5` 的桌面应用，可帮助用户对指定目录下的文件夹进行拖拽排序、批量重命名等操作。
+This desktop application, powered by `PyQt5`, lets you reorder folders with drag-and-drop, apply tidy numbering, and capture ideas alongside your workspace.
 
-## 运行方式
+## How to run
 
-1. 安装 Python 3 环境，并使用 `pip install pyqt5` 安装依赖。
-2. 在终端进入项目根目录，执行：
+1. Install Python 3 and the dependency:
+   ```bash
+   pip install pyqt5
+   ```
+2. From the project root, launch the app:
    ```bash
    python file_manager.py
    ```
 
-启动后，在文本框中输入或选择要管理的文件夹路径即可开始操作。
+Once it opens, drop a folder onto the window or paste a path into the address box to get started.
 
-## 主要功能
+## Highlights
 
-- **拖拽排序**：在列表中拖动文件夹即可调整顺序。取消暂停后会自动为文件夹按顺序添加前缀编号。
-- **右键菜单**：包含新建文件夹、打开目录、重命名、清除序号、开始/暂停排序等功能。
-- **双击打开**：双击列表项可在系统文件管理器中打开对应文件夹。
-- **记住路径**：应用会在 `last_state.json` 中记录上次打开的路径，方便下次启动继续使用。
-- **拖拽路径**：将文件夹拖到窗口上即可切换路径，并会自动刷新列表。
-- **批量删除**：支持多选后在右键菜单中批量删除选中的文件夹。
-- **文件夹保留**：可在右键菜单中将文件夹标记为保留，保留文件夹不会参与自动排序或清除序号。
-- **自动刷新**：程序会定时检查目标目录，若有变化会自动更新列表内容。
-- **占用提示**：当文件夹被其他程序占用时，会弹窗提醒先释放对应的文件夹后再操作。
-- **状态提示**：开始或暂停排序时会在列表上显示模糊遮罩作为提示；双击“浏览...”按钮可临时放大窗口高度。
+- **Dual workspace** – Manage inspiration and to-dos at the top while keeping your folder operations below.
+- **Drag-and-drop sorting** – Reorder folders directly in the list. Resume sorting to apply fresh numeric prefixes automatically.
+- **Contextual tools** – Right-click folders to create, rename, delete, reserve, or clear numbering with ease.
+- **Double-click actions** – Open folders in your system file manager or mark notes as finished with a quick double-click.
+- **Reserved folders** – Flag specific folders so they remain untouched by batch operations.
+- **Smart persistence** – The latest path, reserved list, and your idea log are saved in `last_state.json` for next time.
+- **Live refresh** – The list keeps an eye on directory changes and refreshes itself automatically.
 
-## 打包为可执行文件
+## Build an executable
 
-项目提供了两种基于 [PyInstaller](https://pyinstaller.org/) 的打包方式：
+You can package the project with [PyInstaller](https://pyinstaller.org/) in two ways:
 
-- **单文件（原有方式）**：
+- **Single executable**
   ```bash
   pyinstaller file_manager.spec
   ```
-  生成的单文件可执行程序位于 `dist/` 目录下。
-- **目录版（推荐，启动更快）**：
+  The bundled app is generated in the `dist/` directory.
+- **Directory build (faster startup)**
   ```bash
   python build_dist.py
   ```
-  该脚本会生成 `dist/file_manager/` 目录，避免单文件自解压带来的启动延迟。
+  This creates `dist/file_manager/`, avoiding the self-extraction delay of the one-file mode.
 
-## 许可证
+## License
 
-本项目基于 MIT 许可证发布，详情见 `LICENSE`（如有）。
-
+This project is released under the MIT License. See `LICENSE` if present.
