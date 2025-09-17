@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -28,6 +29,9 @@ class FileManagerApp(QtWidgets.QWidget):
         super().__init__()
         self.setAcceptDrops(True)
         self.sort_paused = True
+        self._state: dict[str, object] = self._load_last_state()
+        self._current_path = ""
+        self._reserved: set[str] = set()
         self._setup_ui()
         self._setup_blur_overlay()
 
@@ -36,8 +40,7 @@ class FileManagerApp(QtWidgets.QWidget):
         self._timer.timeout.connect(self._auto_refresh_folder_list)
         self._timer.start(1000)
 
-        last_state = self._load_last_state()
-        initial_path = (last_state or {}).get("last_path", "")
+        initial_path = self._state.get("last_path", "")
         if initial_path:
             self.path_edit.setText(initial_path)
             if os.path.exists(initial_path):
@@ -86,14 +89,120 @@ class FileManagerApp(QtWidgets.QWidget):
         self.blur_overlay.hide()
 
     def _save_last_state(self, path: str) -> None:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
-            json.dump({"last_path": path}, fh)
+        self._state["last_path"] = path
+        self._write_state()
 
-    def _load_last_state(self) -> dict | None:
-        if os.path.exists(CONFIG_FILE):
+    def _write_state(self) -> None:
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
+                json.dump(self._state, fh, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            print(f"保存状态失败: {exc}", file=sys.stderr)
+
+    def _load_last_state(self) -> dict[str, object]:
+        if not os.path.exists(CONFIG_FILE):
+            return {"last_path": "", "reserved": {}}
+        try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
-                return json.load(fh)
-        return None
+                data = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return {"last_path": "", "reserved": {}}
+        if not isinstance(data, dict):
+            return {"last_path": "", "reserved": {}}
+        reserved = data.get("reserved", {})
+        if not isinstance(reserved, dict):
+            reserved = {}
+        else:
+            sanitized_reserved: dict[str, list[str]] = {}
+            for key, value in reserved.items():
+                if not isinstance(key, str) or not isinstance(value, list):
+                    continue
+                sanitized_reserved[key] = [str(item) for item in value if isinstance(item, str)]
+            reserved = sanitized_reserved
+        data["reserved"] = reserved
+        if "last_path" not in data or not isinstance(data["last_path"], str):
+            data["last_path"] = ""
+        return data
+
+    def _get_reserved_dict(self) -> dict[str, list[str]]:
+        reserved = self._state.setdefault("reserved", {})
+        if not isinstance(reserved, dict):
+            reserved = {}
+            self._state["reserved"] = reserved
+        return reserved
+
+    def _save_reserved_state(self) -> None:
+        if not self._current_path:
+            return
+        reserved_dict = self._get_reserved_dict()
+        if self._reserved:
+            reserved_dict[self._current_path] = sorted(self._reserved)
+        else:
+            reserved_dict.pop(self._current_path, None)
+        self._write_state()
+
+    def _apply_reserved_style(self, item: QtWidgets.QListWidgetItem, is_reserved: bool) -> None:
+        item.setData(QtCore.Qt.UserRole, is_reserved)
+        font = item.font()
+        font.setItalic(is_reserved)
+        item.setFont(font)
+        if is_reserved:
+            item.setForeground(QtGui.QColor("#8c8c8c"))
+            item.setToolTip("已标记为保留，此文件夹不会参与自动排序或清除序号。")
+        else:
+            item.setForeground(QtGui.QBrush())
+            item.setToolTip("")
+
+    def _is_item_reserved(self, item: QtWidgets.QListWidgetItem) -> bool:
+        data = item.data(QtCore.Qt.UserRole)
+        if isinstance(data, bool):
+            return data
+        return item.text() in self._reserved
+
+    def _mark_selected_as_reserved(self) -> None:
+        if not self._current_path:
+            return
+        changed = False
+        for item in self.list_widget.selectedItems():
+            name = item.text()
+            if name not in self._reserved:
+                self._reserved.add(name)
+                changed = True
+            self._apply_reserved_style(item, True)
+        if changed:
+            self._save_reserved_state()
+
+    def _unmark_selected_reserved(self) -> None:
+        if not self._current_path or not self._reserved:
+            return
+        changed = False
+        for item in self.list_widget.selectedItems():
+            name = item.text()
+            if name in self._reserved:
+                self._reserved.remove(name)
+                changed = True
+            self._apply_reserved_style(item, name in self._reserved)
+        if changed:
+            self._save_reserved_state()
+
+    @staticmethod
+    def _is_folder_in_use_error(exc: OSError) -> bool:
+        if isinstance(exc, PermissionError):
+            return True
+        err_no = getattr(exc, "errno", None)
+        if err_no in {errno.EACCES, errno.EBUSY, errno.EPERM}:
+            return True
+        win_err = getattr(exc, "winerror", None)
+        if win_err in {32, 33}:
+            return True
+        return False
+
+    def _show_folder_in_use_warning(self, folder_name: str) -> None:
+        QtWidgets.QMessageBox.warning(
+            self,
+            "文件夹被占用",
+            f"文件夹“{folder_name}”当前正被其他程序占用，请关闭相关窗口或程序后重试。",
+        )
 
     def _setup_ui(self) -> None:
         font = QtGui.QFont("微软雅黑", 14)
@@ -216,8 +325,16 @@ class FileManagerApp(QtWidgets.QWidget):
             folders.sort()
         except Exception:
             folders = []
+        reserved_dict = self._get_reserved_dict()
+        stored_reserved = set(reserved_dict.get(base_path, []))
+        actual_reserved = stored_reserved & set(folders)
+        self._current_path = base_path
+        self._reserved = actual_reserved
+        if actual_reserved != stored_reserved:
+            self._save_reserved_state()
         for folder in folders:
             item = QtWidgets.QListWidgetItem(folder)
+            self._apply_reserved_style(item, folder in self._reserved)
             self.list_widget.addItem(item)
         n = len(folders)
         max_show = min(n, 30)
@@ -244,21 +361,50 @@ class FileManagerApp(QtWidgets.QWidget):
 
     def _confirm_sort(self) -> None:
         base_path = self.path_edit.text()
-        folders = [self.list_widget.item(i).text() for i in range(self.list_widget.count())]
+        if not os.path.isdir(base_path):
+            return
+        items = [self.list_widget.item(i) for i in range(self.list_widget.count())]
+        rename_plan: list[tuple[str, str]] = []
         used_names: set[str] = set()
-        for i, folder_name in enumerate(folders, 1):
-            base_name = re.sub(r"^\d+_", "", folder_name)
-            new_name = f"{i:02d}_{base_name}"
+        index = 1
+        for item in items:
+            if self._is_item_reserved(item):
+                continue
+            folder_name = item.text()
+            base_name = re.sub(r"^\d+_?", "", folder_name)
+            if not base_name:
+                base_name = folder_name
+            new_name = f"{index:02d}_{base_name}"
             current_path = os.path.join(base_path, folder_name)
             new_path = os.path.join(base_path, new_name)
             counter = 1
-            while new_name in used_names or (os.path.exists(new_path) and current_path != new_path):
-                new_name = f"{i:02d}_{base_name} ({counter})"
+            while (
+                new_name in used_names
+                or (
+                    os.path.exists(new_path)
+                    and os.path.normcase(current_path) != os.path.normcase(new_path)
+                )
+            ):
+                new_name = f"{index:02d}_{base_name} ({counter})"
                 new_path = os.path.join(base_path, new_name)
                 counter += 1
             used_names.add(new_name)
-            if os.path.exists(current_path):
+            rename_plan.append((folder_name, new_name))
+            index += 1
+        for old_name, new_name in rename_plan:
+            current_path = os.path.join(base_path, old_name)
+            if not os.path.exists(current_path):
+                continue
+            new_path = os.path.join(base_path, new_name)
+            if os.path.normcase(current_path) == os.path.normcase(new_path):
+                continue
+            try:
                 os.rename(current_path, new_path)
+            except OSError as exc:
+                if self._is_folder_in_use_error(exc):
+                    self._show_folder_in_use_warning(old_name)
+                else:
+                    QtWidgets.QMessageBox.critical(self, "错误", f"重命名“{old_name}”失败：{exc}")
         self._refresh_list(base_path)
 
     def _create_new_folder(self) -> None:
@@ -279,9 +425,13 @@ class FileManagerApp(QtWidgets.QWidget):
 
     def _clear_prefix_number(self) -> None:
         base_path = self.path_edit.text()
+        if not os.path.isdir(base_path):
+            return
         folders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
         changed = False
         for old_name in folders:
+            if old_name in self._reserved:
+                continue
             new_name = re.sub(r"^\d+_?", "", old_name)
             if new_name and new_name != old_name:
                 old_path = os.path.join(base_path, old_name)
@@ -291,8 +441,11 @@ class FileManagerApp(QtWidgets.QWidget):
                 try:
                     os.rename(old_path, new_path)
                     changed = True
-                except Exception as exc:
-                    QtWidgets.QMessageBox.critical(self, "错误", f"清除序号失败：{exc}")
+                except OSError as exc:
+                    if self._is_folder_in_use_error(exc):
+                        self._show_folder_in_use_warning(old_name)
+                    else:
+                        QtWidgets.QMessageBox.critical(self, "错误", f"清除序号失败：{exc}")
         if changed:
             self._refresh_list(base_path)
 
@@ -308,12 +461,26 @@ class FileManagerApp(QtWidgets.QWidget):
         ) != QtWidgets.QMessageBox.Yes:
             return
         base_path = self.path_edit.text()
+        if not os.path.isdir(base_path):
+            return
+        reserved_changed = False
         for name in names:
             folder_path = os.path.join(base_path, name)
             try:
                 shutil.rmtree(folder_path)
-            except Exception as e:
-                QtWidgets.QMessageBox.warning(self, "删除失败", f"{name} 删除失败：{e}")
+            except OSError as exc:
+                if self._is_folder_in_use_error(exc):
+                    self._show_folder_in_use_warning(name)
+                else:
+                    QtWidgets.QMessageBox.warning(self, "删除失败", f"{name} 删除失败：{exc}")
+            except shutil.Error as exc:
+                QtWidgets.QMessageBox.warning(self, "删除失败", f"{name} 删除失败：{exc}")
+            else:
+                if name in self._reserved:
+                    self._reserved.remove(name)
+                    reserved_changed = True
+        if reserved_changed:
+            self._save_reserved_state()
         self._refresh_list(base_path)
 
     def _on_select(self) -> None:
@@ -346,9 +513,17 @@ class FileManagerApp(QtWidgets.QWidget):
                 return
             try:
                 os.rename(old_path, new_path)
+            except OSError as exc:
+                if self._is_folder_in_use_error(exc):
+                    self._show_folder_in_use_warning(old_name)
+                else:
+                    QtWidgets.QMessageBox.critical(self, "错误", f"重命名失败：{exc}")
+            else:
+                if old_name in self._reserved:
+                    self._reserved.remove(old_name)
+                    self._reserved.add(new_name)
+                    self._save_reserved_state()
                 self._refresh_list(base_path)
-            except Exception as exc:
-                QtWidgets.QMessageBox.critical(self, "错误", f"重命名失败：{exc}")
 
     def _pause_sort(self) -> None:
         self.sort_paused = True
@@ -376,11 +551,19 @@ class FileManagerApp(QtWidgets.QWidget):
         menu.addAction("新建文件夹", self._create_new_folder)
         menu.addAction("选择目录", self._select_directory)
         menu.addSeparator()
-        selected_count = len(self.list_widget.selectedItems())
-        act_rename = menu.addAction("重命名称", self._rename_selected_folder)
+        selected_items = self.list_widget.selectedItems()
+        selected_count = len(selected_items)
+        act_rename = menu.addAction("重命名", self._rename_selected_folder)
         act_rename.setEnabled(selected_count == 1)
         act_delete = menu.addAction("删除所选", self._delete_selected_folders)
         act_delete.setEnabled(selected_count >= 1)
+        menu.addSeparator()
+        reserved_selected = sum(1 for item in selected_items if self._is_item_reserved(item))
+        act_mark_reserved = menu.addAction("标记为保留（不排序）", self._mark_selected_as_reserved)
+        can_modify_reserved = bool(self._current_path)
+        act_mark_reserved.setEnabled(can_modify_reserved and selected_count > reserved_selected)
+        act_unmark_reserved = menu.addAction("取消保留", self._unmark_selected_reserved)
+        act_unmark_reserved.setEnabled(can_modify_reserved and reserved_selected > 0)
         menu.addSeparator()
         menu.addAction("清除全部序号", self._clear_prefix_number)
         menu.addSeparator()
