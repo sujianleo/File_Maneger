@@ -7,10 +7,24 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 CONFIG_FILE = "last_state.json"
+
+NOTE_ROLE = QtCore.Qt.UserRole + 1
+
+
+class NotesListWidget(QtWidgets.QListWidget):
+    tabToggleRequested = QtCore.pyqtSignal()
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() == QtCore.Qt.Key_Tab:
+            event.accept()
+            self.tabToggleRequested.emit()
+            return
+        super().keyPressEvent(event)
 
 class MyButton(QtWidgets.QPushButton):
     doubleClicked = QtCore.pyqtSignal()
@@ -98,7 +112,7 @@ class FileManagerApp(QtWidgets.QWidget):
             with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
                 json.dump(self._state, fh, ensure_ascii=False, indent=2)
         except OSError as exc:
-            print(f"保存状态失败: {exc}", file=sys.stderr)
+            print(f"Failed to save state: {exc}", file=sys.stderr)
 
     def _load_last_state(self) -> dict[str, object]:
         if not os.path.exists(CONFIG_FILE):
@@ -123,12 +137,41 @@ class FileManagerApp(QtWidgets.QWidget):
         data["reserved"] = reserved
         if "last_path" not in data or not isinstance(data["last_path"], str):
             data["last_path"] = ""
-        notes = data.get("notes", [])
-        if isinstance(notes, list):
-            notes = [str(item) for item in notes if isinstance(item, str)]
-        else:
-            notes = []
-        data["notes"] = notes
+        raw_notes = data.get("notes", [])
+        normalized_notes: list[dict[str, object]] = []
+        if isinstance(raw_notes, list):
+            for item in raw_notes:
+                if isinstance(item, dict):
+                    content = str(item.get("content", "")).strip()
+                    if not content:
+                        continue
+                    timestamp = str(item.get("timestamp", "")).strip()
+                    if not timestamp:
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    category = str(item.get("category", "idea"))
+                    if category not in {"idea", "todo"}:
+                        category = "idea"
+                    completed = bool(item.get("completed", False))
+                    normalized_notes.append(
+                        {
+                            "content": content,
+                            "timestamp": timestamp,
+                            "category": category,
+                            "completed": completed,
+                        }
+                    )
+                elif isinstance(item, str):
+                    content = item.strip()
+                    if content:
+                        normalized_notes.append(
+                            {
+                                "content": content,
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "category": "idea",
+                                "completed": False,
+                            }
+                        )
+        data["notes"] = normalized_notes
         return data
 
     def _get_reserved_dict(self) -> dict[str, list[str]]:
@@ -155,7 +198,7 @@ class FileManagerApp(QtWidgets.QWidget):
         item.setFont(font)
         if is_reserved:
             item.setForeground(QtGui.QColor("#8c8c8c"))
-            item.setToolTip("已标记为保留，此文件夹不会参与自动排序或清除序号。")
+            item.setToolTip("Marked as reserved. This folder will be skipped during sorting and renumbering.")
         else:
             item.setForeground(QtGui.QBrush())
             item.setToolTip("")
@@ -207,87 +250,174 @@ class FileManagerApp(QtWidgets.QWidget):
     def _show_folder_in_use_warning(self, folder_name: str) -> None:
         QtWidgets.QMessageBox.warning(
             self,
-            "文件夹被占用",
-            f"文件夹“{folder_name}”当前正被其他程序占用，请关闭相关窗口或程序后重试。",
+            "Folder in use",
+            f"The folder “{folder_name}” is currently used by another application. Close related windows or programs and try again.",
         )
 
     def _setup_ui(self) -> None:
-        font = QtGui.QFont("微软雅黑", 14)
-        self.setFont(font)
+        base_font = QtGui.QFont("Segoe UI", 13)
+        self.setFont(base_font)
         self.setStyleSheet("""
-            QWidget { background: #f7fafd; }
+            QWidget { background: #eaf1fb; color: #1f2430; }
+            QFrame#CardFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(255,255,255,0.96), stop:1 rgba(243,247,255,0.96));
+                border-radius: 22px;
+                border: 1px solid rgba(164, 180, 207, 0.45);
+            }
+            QLabel#SectionTitle {
+                color: #18233d;
+            }
             QLineEdit {
-                border-radius: 4px; padding: 5px 8px;
-                border: 1px solid #b7bec7; background: #fff;
-                font-size: 20px;
-                min-height: 40px;
+                border-radius: 14px; padding: 10px 16px;
+                border: 1px solid rgba(122, 138, 170, 0.35);
+                background: rgba(255,255,255,0.95);
+                font-size: 18px;
+                min-height: 44px;
             }
             QPushButton {
-                border-radius: 4px; background: #3794ff;
-                color: white; padding: 5px 16px;
-                font-size: 18px; font-weight: bold;
-                min-height: 40px;
+                border-radius: 16px; background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6c8cff, stop:1 #4f56ff);
+                color: white; padding: 10px 24px;
+                font-size: 16px; font-weight: 600;
+                min-height: 44px;
             }
-            QPushButton:hover { background: #2265b5;}
+            QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #5474ff, stop:1 #3d43f5); }
             QListWidget {
-                border-radius: 9px;
-                border: 0.7px solid #b5bac0;
-                background: #fff; font-size: 18px;
+                border-radius: 18px;
+                border: 1px solid rgba(152, 167, 196, 0.35);
+                background: rgba(255,255,255,0.9); font-size: 16px;
+                padding: 6px;
             }
             QListWidget::item {
-                height: 32px; border-radius: 5px; color: #222;
+                height: 40px; border-radius: 14px; padding-left: 12px;
             }
             QListWidget::item:selected:active {
-                background: #3794ff; color: #fff;
+                background: rgba(86, 112, 255, 0.18); color: #1a1f2b;
             }
             QListWidget::item:selected:!active {
-                background: #b5c6e0; color: #222;
+                background: rgba(86, 112, 255, 0.12); color: #1a1f2b;
             }
             QListWidget::item:hover {
-                background: #eef5ff;
+                background: rgba(120, 140, 255, 0.15);
             }
             QScrollBar:vertical {
                 border: none;
                 background: transparent;
-                width: 10px;
-                margin: 1px 1px 1px 0;
+                width: 12px;
+                margin: 4px;
                 border-radius: 10px;
             }
             QScrollBar::handle:vertical {
-                background: #3794ff;
-                min-height: 28px;
+                background: rgba(76, 107, 255, 0.75);
+                min-height: 36px;
                 border: none;
                 border-radius: 7px;
-                margin: 1px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #2265b5;
+                background: rgba(76, 107, 255, 0.95);
             }
         """)
-        self.setWindowTitle("文件夹排序器")
+        self.setWindowTitle("Folder Flow Organizer")
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(4)
-        layout.setContentsMargins(8, 8, 8, 4)
+        layout.setSpacing(20)
+        layout.setContentsMargins(28, 24, 28, 24)
 
-        self.tabs = QtWidgets.QTabWidget()
-        layout.addWidget(self.tabs)
+        title = QtWidgets.QLabel("Flow through your folders and ideas")
+        title_font = QtGui.QFont("Segoe UI Semibold", 24)
+        title.setFont(title_font)
+        title.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        layout.addWidget(title)
 
-        file_tab = QtWidgets.QWidget()
-        file_layout = QtWidgets.QVBoxLayout(file_tab)
-        file_layout.setSpacing(4)
-        file_layout.setContentsMargins(0, 0, 0, 0)
+        subtitle = QtWidgets.QLabel(
+            "Capture inspiration up top and take action below. Drag folders, type notes, and stay in control."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("color: rgba(40, 53, 79, 0.72); font-size: 15px;")
+        layout.addWidget(subtitle)
+
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.main_splitter.setHandleWidth(12)
+        self.main_splitter.setStyleSheet("QSplitter::handle { background: transparent; }")
+        layout.addWidget(self.main_splitter, 1)
+
+        notes_card = QtWidgets.QFrame()
+        notes_card.setObjectName("CardFrame")
+        notes_layout = QtWidgets.QVBoxLayout(notes_card)
+        notes_layout.setSpacing(16)
+        notes_layout.setContentsMargins(24, 24, 24, 24)
+
+        notes_title = QtWidgets.QLabel("Inspiration & To-dos")
+        notes_title.setObjectName("SectionTitle")
+        notes_title_font = QtGui.QFont("Segoe UI Semibold", 20)
+        notes_title.setFont(notes_title_font)
+        notes_layout.addWidget(notes_title)
+
+        notes_hint = QtWidgets.QLabel(
+            "New entries are time-stamped automatically. Double-click to finish an item, press Tab to switch its mood, and every completed line glides to the bottom."
+        )
+        notes_hint.setWordWrap(True)
+        notes_hint.setStyleSheet("color: rgba(40, 53, 79, 0.68);")
+        notes_layout.addWidget(notes_hint)
+
+        notes_input_layout = QtWidgets.QHBoxLayout()
+        notes_input_layout.setSpacing(12)
+        self.note_input = QtWidgets.QLineEdit()
+        self.note_input.setPlaceholderText("Write a spark or a task and press Enter")
+        self.note_input.returnPressed.connect(self._add_note)
+        self.add_note_btn = QtWidgets.QPushButton("Add")
+        self.add_note_btn.clicked.connect(self._add_note)
+        notes_input_layout.addWidget(self.note_input, 1)
+        notes_input_layout.addWidget(self.add_note_btn)
+        notes_layout.addLayout(notes_input_layout)
+
+        self.notes_list = NotesListWidget()
+        self.notes_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.notes_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.notes_list.itemSelectionChanged.connect(self._update_notes_actions)
+        self.notes_list.itemDoubleClicked.connect(self._toggle_note_completion)
+        self.notes_list.tabToggleRequested.connect(self._toggle_selected_note_category)
+        notes_layout.addWidget(self.notes_list, 1)
+
+        notes_actions_layout = QtWidgets.QHBoxLayout()
+        notes_actions_layout.addStretch()
+        self.delete_note_btn = QtWidgets.QPushButton("Delete selected")
+        self.delete_note_btn.clicked.connect(self._delete_selected_notes)
+        notes_actions_layout.addWidget(self.delete_note_btn)
+        notes_layout.addLayout(notes_actions_layout)
+
+        files_card = QtWidgets.QFrame()
+        files_card.setObjectName("CardFrame")
+        file_layout = QtWidgets.QVBoxLayout(files_card)
+        file_layout.setSpacing(16)
+        file_layout.setContentsMargins(24, 24, 24, 24)
+
+        files_title = QtWidgets.QLabel("Folder workspace")
+        files_title.setObjectName("SectionTitle")
+        files_title_font = QtGui.QFont("Segoe UI Semibold", 20)
+        files_title.setFont(files_title_font)
+        file_layout.addWidget(files_title)
+
+        file_hint = QtWidgets.QLabel(
+            "Drop a folder to manage, or browse for a location. Reorder entries to generate neat numbered names."
+        )
+        file_hint.setWordWrap(True)
+        file_hint.setStyleSheet("color: rgba(40, 53, 79, 0.68);")
+        file_layout.addWidget(file_hint)
 
         path_layout = QtWidgets.QHBoxLayout()
-        path_layout.setSpacing(4)
+        path_layout.setSpacing(12)
         self.path_edit = QtWidgets.QLineEdit()
-        self.path_edit.setFont(QtGui.QFont("微软雅黑", 20))  # 地址栏专用大字体
+        self.path_edit.setFont(QtGui.QFont("Segoe UI", 18))
+        self.path_edit.setPlaceholderText("Paste or drop a folder path here")
         self.path_edit.returnPressed.connect(self._on_path_entry)
-        self.browse_btn = MyButton("浏览...")
-        self.browse_btn.setFont(QtGui.QFont("微软雅黑", 18))
+        self.browse_btn = MyButton("Browse…")
+        self.browse_btn.setFont(QtGui.QFont("Segoe UI", 16))
         self.browse_btn.clicked.connect(self._select_directory)
         self.browse_btn.doubleClicked.connect(self._on_browse_double_clicked)
-        path_layout.addWidget(self.path_edit)
+        path_layout.addWidget(self.path_edit, 1)
         path_layout.addWidget(self.browse_btn)
         file_layout.addLayout(path_layout)
 
@@ -299,54 +429,17 @@ class FileManagerApp(QtWidgets.QWidget):
         self.list_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.itemDoubleClicked.connect(self._open_folder_in_explorer)
-        file_layout.addWidget(self.list_widget)
+        file_layout.addWidget(self.list_widget, 1)
 
-        self.tabs.addTab(file_tab, "文件整理")
-
-        notes_tab = QtWidgets.QWidget()
-        notes_layout = QtWidgets.QVBoxLayout(notes_tab)
-        notes_layout.setSpacing(6)
-        notes_layout.setContentsMargins(4, 4, 4, 4)
-
-        notes_label = QtWidgets.QLabel("记录灵感或待办事项，每条一行，双击可直接编辑。")
-        notes_label.setWordWrap(True)
-        notes_layout.addWidget(notes_label)
-
-        notes_input_layout = QtWidgets.QHBoxLayout()
-        notes_input_layout.setSpacing(4)
-        self.note_input = QtWidgets.QLineEdit()
-        self.note_input.setPlaceholderText("输入新的灵感或代办事项，按回车或点击添加")
-        self.note_input.returnPressed.connect(self._add_note)
-        self.add_note_btn = QtWidgets.QPushButton("添加")
-        self.add_note_btn.clicked.connect(self._add_note)
-        notes_input_layout.addWidget(self.note_input)
-        notes_input_layout.addWidget(self.add_note_btn)
-        notes_layout.addLayout(notes_input_layout)
-
-        self.notes_list = QtWidgets.QListWidget()
-        self.notes_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self.notes_list.setEditTriggers(
-            QtWidgets.QAbstractItemView.DoubleClicked
-            | QtWidgets.QAbstractItemView.EditKeyPressed
-        )
-        self.notes_list.itemChanged.connect(self._on_note_changed)
-        self.notes_list.itemSelectionChanged.connect(self._update_notes_actions)
-        notes_layout.addWidget(self.notes_list)
-
-        notes_actions_layout = QtWidgets.QHBoxLayout()
-        notes_actions_layout.addStretch()
-        self.delete_note_btn = QtWidgets.QPushButton("删除所选")
-        self.delete_note_btn.clicked.connect(self._delete_selected_notes)
-        notes_actions_layout.addWidget(self.delete_note_btn)
-        notes_layout.addLayout(notes_actions_layout)
-
-        self.tabs.addTab(notes_tab, "灵感与代办")
+        self.main_splitter.addWidget(notes_card)
+        self.main_splitter.addWidget(files_card)
+        self.main_splitter.setSizes([360, 420])
 
         shadow = QtWidgets.QGraphicsDropShadowEffect(self.list_widget)
-        shadow.setBlurRadius(16)
+        shadow.setBlurRadius(24)
         shadow.setXOffset(0)
-        shadow.setYOffset(2)
-        shadow.setColor(QtGui.QColor(0,0,0,20))
+        shadow.setYOffset(6)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 35))
         self.list_widget.setGraphicsEffect(shadow)
 
     def _on_browse_double_clicked(self):
@@ -403,21 +496,125 @@ class FileManagerApp(QtWidgets.QWidget):
         self.list_widget.setMinimumHeight(list_h)
         self._last_folder_list = folders
 
+    def _normalize_note_data(self, data: dict[str, object]) -> dict[str, object]:
+        content = str(data.get("content", "")).strip()
+        timestamp = str(data.get("timestamp", "")).strip()
+        if not timestamp:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        category = str(data.get("category", "idea"))
+        if category not in {"idea", "todo"}:
+            category = "idea"
+        completed = bool(data.get("completed", False))
+        return {
+            "content": content,
+            "timestamp": timestamp,
+            "category": category,
+            "completed": completed,
+        }
+
+    def _get_note_item_data(self, item: QtWidgets.QListWidgetItem) -> dict[str, object]:
+        stored = item.data(NOTE_ROLE)
+        if isinstance(stored, dict):
+            return self._normalize_note_data(stored)
+        return self._normalize_note_data({"content": item.text()})
+
+    def _set_note_item_data(self, item: QtWidgets.QListWidgetItem, data: dict[str, object]) -> None:
+        normalized = self._normalize_note_data(data)
+        item.setData(NOTE_ROLE, normalized)
+        self._apply_note_style(item, normalized)
+
+    def _format_note_text(self, data: dict[str, object]) -> str:
+        timestamp = data.get("timestamp", "")
+        content = data.get("content", "")
+        return f"{timestamp}   {content}".strip()
+
+    def _apply_note_style(self, item: QtWidgets.QListWidgetItem, data: dict[str, object]) -> None:
+        item.setText(self._format_note_text(data))
+        font = item.font()
+        font.setPointSize(15)
+        font.setBold(False)
+        font.setStrikeOut(bool(data.get("completed", False)))
+        item.setFont(font)
+
+        completed = bool(data.get("completed", False))
+        category = data.get("category", "idea")
+        if completed:
+            item.setBackground(QtGui.QColor("#d9dce2"))
+            item.setForeground(QtGui.QColor("#666b78"))
+        else:
+            if category == "todo":
+                item.setBackground(QtGui.QColor("#ff6b6b"))
+                item.setForeground(QtGui.QColor("#ffffff"))
+            else:
+                gradient = QtGui.QLinearGradient(0, 0, 1, 1)
+                gradient.setCoordinateMode(QtGui.QGradient.ObjectBoundingMode)
+                gradient.setColorAt(0.0, QtGui.QColor("#ff6ec7"))
+                gradient.setColorAt(0.25, QtGui.QColor("#ffde59"))
+                gradient.setColorAt(0.5, QtGui.QColor("#53f3ff"))
+                gradient.setColorAt(0.75, QtGui.QColor("#7f6bff"))
+                gradient.setColorAt(1.0, QtGui.QColor("#ff6ec7"))
+                item.setBackground(QtGui.QBrush(gradient))
+                item.setForeground(QtGui.QColor("#ffffff"))
+
+        note_type = "Inspiration" if category == "idea" else "To-do"
+        status = "Completed" if completed else "Active"
+        item.setToolTip(f"{note_type} · {status}")
+
+    def _toggle_note_completion(self, item: QtWidgets.QListWidgetItem) -> None:
+        data = self._get_note_item_data(item)
+        data["completed"] = not data.get("completed", False)
+        self._set_note_item_data(item, data)
+        row = self.notes_list.row(item)
+        self.notes_list.takeItem(row)
+        if data["completed"]:
+            self.notes_list.addItem(item)
+        else:
+            self.notes_list.insertItem(0, item)
+        self.notes_list.setCurrentItem(item)
+        self._save_notes()
+        self._update_notes_actions()
+
+    def _toggle_selected_note_category(self) -> None:
+        item = self.notes_list.currentItem()
+        if not item:
+            return
+        data = self._get_note_item_data(item)
+        data["category"] = "todo" if data.get("category") == "idea" else "idea"
+        self._set_note_item_data(item, data)
+        self._save_notes()
+        self._update_notes_actions()
+
     def _load_notes_from_state(self) -> None:
         notes = self._state.get("notes", [])
         if not isinstance(notes, list):
             notes = []
+        active_notes: list[dict[str, object]] = []
+        completed_notes: list[dict[str, object]] = []
+        for entry in notes:
+            if isinstance(entry, dict):
+                normalized = self._normalize_note_data(entry)
+                if normalized["completed"]:
+                    completed_notes.append(normalized)
+                else:
+                    active_notes.append(normalized)
         self.notes_list.blockSignals(True)
         self.notes_list.clear()
-        for text in notes:
-            item = QtWidgets.QListWidgetItem(text)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
-            self.notes_list.addItem(item)
+        for bucket in (active_notes, completed_notes):
+            for note in bucket:
+                item = QtWidgets.QListWidgetItem()
+                item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                self._set_note_item_data(item, note)
+                self.notes_list.addItem(item)
         self.notes_list.blockSignals(False)
         self._update_notes_actions()
 
     def _save_notes(self) -> None:
-        notes = [self.notes_list.item(i).text() for i in range(self.notes_list.count())]
+        notes: list[dict[str, object]] = []
+        for index in range(self.notes_list.count()):
+            item = self.notes_list.item(index)
+            data = self._get_note_item_data(item)
+            if data["content"]:
+                notes.append(data)
         self._state["notes"] = notes
         self._write_state()
 
@@ -425,9 +622,17 @@ class FileManagerApp(QtWidgets.QWidget):
         text = self.note_input.text().strip()
         if not text:
             return
-        item = QtWidgets.QListWidgetItem(text)
-        item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
-        self.notes_list.addItem(item)
+        item = QtWidgets.QListWidgetItem()
+        item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+        note_data = {
+            "content": text,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "category": "idea",
+            "completed": False,
+        }
+        self._set_note_item_data(item, note_data)
+        self.notes_list.insertItem(0, item)
+        self.notes_list.setCurrentItem(item)
         self.note_input.clear()
         self._save_notes()
         self._update_notes_actions()
@@ -442,9 +647,6 @@ class FileManagerApp(QtWidgets.QWidget):
         self._save_notes()
         self._update_notes_actions()
 
-    def _on_note_changed(self, _item: QtWidgets.QListWidgetItem) -> None:
-        self._save_notes()
-
     def _update_notes_actions(self) -> None:
         has_selection = bool(self.notes_list.selectedItems())
         self.delete_note_btn.setEnabled(has_selection)
@@ -455,7 +657,7 @@ class FileManagerApp(QtWidgets.QWidget):
             start_dir = cur_path
         else:
             start_dir = ""
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择文件夹路径", start_dir)
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose a folder", start_dir)
         if path:
             self.path_edit.setText(path)
             self._save_last_state(path)
@@ -506,12 +708,16 @@ class FileManagerApp(QtWidgets.QWidget):
                 if self._is_folder_in_use_error(exc):
                     self._show_folder_in_use_warning(old_name)
                 else:
-                    QtWidgets.QMessageBox.critical(self, "错误", f"重命名“{old_name}”失败：{exc}")
+                    QtWidgets.QMessageBox.critical(
+                        self, "Rename failed", f"Could not rename “{old_name}”: {exc}"
+                    )
         self._refresh_list(base_path)
 
     def _create_new_folder(self) -> None:
         base_path = self.path_edit.text()
-        folder_name, ok = QtWidgets.QInputDialog.getText(self, "新建文件夹", "请输入文件夹名称：", text="新建")
+        folder_name, ok = QtWidgets.QInputDialog.getText(
+            self, "Create folder", "Name for the new folder:", text="New folder"
+        )
         if not ok or not folder_name:
             return
         counter = 1
@@ -523,7 +729,7 @@ class FileManagerApp(QtWidgets.QWidget):
             os.makedirs(os.path.join(base_path, folder_name))
             self._refresh_list(base_path)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(self, "错误", f"创建文件夹失败：{exc}")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to create folder: {exc}")
 
     def _clear_prefix_number(self) -> None:
         base_path = self.path_edit.text()
@@ -547,7 +753,9 @@ class FileManagerApp(QtWidgets.QWidget):
                     if self._is_folder_in_use_error(exc):
                         self._show_folder_in_use_warning(old_name)
                     else:
-                        QtWidgets.QMessageBox.critical(self, "错误", f"清除序号失败：{exc}")
+                        QtWidgets.QMessageBox.critical(
+                            self, "Error", f"Failed to clear numbering: {exc}"
+                        )
         if changed:
             self._refresh_list(base_path)
 
@@ -556,9 +764,9 @@ class FileManagerApp(QtWidgets.QWidget):
         if not items:
             return
         names = [item.text() for item in items]
-        msg = "确定要删除以下文件夹？\n\n" + "\n".join(names)
+        msg = "Delete the following folders?\n\n" + "\n".join(names)
         if QtWidgets.QMessageBox.question(
-            self, "确认删除", msg,
+            self, "Confirm deletion", msg,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         ) != QtWidgets.QMessageBox.Yes:
             return
@@ -574,9 +782,13 @@ class FileManagerApp(QtWidgets.QWidget):
                 if self._is_folder_in_use_error(exc):
                     self._show_folder_in_use_warning(name)
                 else:
-                    QtWidgets.QMessageBox.warning(self, "删除失败", f"{name} 删除失败：{exc}")
+                    QtWidgets.QMessageBox.warning(
+                        self, "Delete failed", f"Could not delete {name}: {exc}"
+                    )
             except shutil.Error as exc:
-                QtWidgets.QMessageBox.warning(self, "删除失败", f"{name} 删除失败：{exc}")
+                QtWidgets.QMessageBox.warning(
+                    self, "Delete failed", f"Could not delete {name}: {exc}"
+                )
             else:
                 if name in self._reserved:
                     self._reserved.remove(name)
@@ -586,7 +798,7 @@ class FileManagerApp(QtWidgets.QWidget):
         self._refresh_list(base_path)
 
     def _on_select(self) -> None:
-        pass  # 不做任何颜色处理，全部交给QSS
+        pass  # Colors handled entirely via QSS
 
     def _open_folder_in_explorer(self, item: QtWidgets.QListWidgetItem) -> None:
         folder_name = item.text()
@@ -607,11 +819,15 @@ class FileManagerApp(QtWidgets.QWidget):
         old_name = selected[0].text()
         base_path = self.path_edit.text()
         old_path = os.path.join(base_path, old_name)
-        new_name, ok = QtWidgets.QInputDialog.getText(self, "重命名", f"将“{old_name}”重命名为：", text=old_name)
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self, "Rename folder", f"Rename “{old_name}” to:", text=old_name
+        )
         if ok and new_name and new_name != old_name:
             new_path = os.path.join(base_path, new_name)
             if os.path.exists(new_path):
-                QtWidgets.QMessageBox.critical(self, "错误", "已存在同名文件夹！")
+                QtWidgets.QMessageBox.critical(
+                    self, "Error", "A folder with that name already exists!"
+                )
                 return
             try:
                 os.rename(old_path, new_path)
@@ -619,7 +835,9 @@ class FileManagerApp(QtWidgets.QWidget):
                 if self._is_folder_in_use_error(exc):
                     self._show_folder_in_use_warning(old_name)
                 else:
-                    QtWidgets.QMessageBox.critical(self, "错误", f"重命名失败：{exc}")
+                    QtWidgets.QMessageBox.critical(
+                        self, "Rename failed", f"Could not rename folder: {exc}"
+                    )
             else:
                 if old_name in self._reserved:
                     self._reserved.remove(old_name)
@@ -646,33 +864,35 @@ class FileManagerApp(QtWidgets.QWidget):
             self._save_last_state(path)
             self._refresh_list(path)
         else:
-            QtWidgets.QMessageBox.critical(self, "错误", "路径不存在！")
+            QtWidgets.QMessageBox.critical(self, "Error", "Path not found!")
 
     def _show_context_menu(self, pos: QtCore.QPoint) -> None:
         menu = QtWidgets.QMenu(self)
-        menu.addAction("新建文件夹", self._create_new_folder)
-        menu.addAction("选择目录", self._select_directory)
+        menu.addAction("Create folder", self._create_new_folder)
+        menu.addAction("Browse for folder", self._select_directory)
         menu.addSeparator()
         selected_items = self.list_widget.selectedItems()
         selected_count = len(selected_items)
-        act_rename = menu.addAction("重命名", self._rename_selected_folder)
+        act_rename = menu.addAction("Rename", self._rename_selected_folder)
         act_rename.setEnabled(selected_count == 1)
-        act_delete = menu.addAction("删除所选", self._delete_selected_folders)
+        act_delete = menu.addAction("Delete selected", self._delete_selected_folders)
         act_delete.setEnabled(selected_count >= 1)
         menu.addSeparator()
         reserved_selected = sum(1 for item in selected_items if self._is_item_reserved(item))
-        act_mark_reserved = menu.addAction("标记为保留（不排序）", self._mark_selected_as_reserved)
+        act_mark_reserved = menu.addAction(
+            "Mark as reserved (skip sorting)", self._mark_selected_as_reserved
+        )
         can_modify_reserved = bool(self._current_path)
         act_mark_reserved.setEnabled(can_modify_reserved and selected_count > reserved_selected)
-        act_unmark_reserved = menu.addAction("取消保留", self._unmark_selected_reserved)
+        act_unmark_reserved = menu.addAction("Remove reserved", self._unmark_selected_reserved)
         act_unmark_reserved.setEnabled(can_modify_reserved and reserved_selected > 0)
         menu.addSeparator()
-        menu.addAction("清除全部序号", self._clear_prefix_number)
+        menu.addAction("Clear numbering", self._clear_prefix_number)
         menu.addSeparator()
         if self.sort_paused:
-            menu.addAction("开始排序", self._resume_sort)
+            menu.addAction("Start sorting", self._resume_sort)
         else:
-            menu.addAction("暂停排序", self._pause_sort)
+            menu.addAction("Pause sorting", self._pause_sort)
         menu.setStyleSheet("""
             QMenu { font-size:16px; }
             QMenu::item:selected { background-color: #3794ff; color: #fff; }
