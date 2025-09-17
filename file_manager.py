@@ -17,14 +17,33 @@ NOTE_ROLE = QtCore.Qt.UserRole + 1
 
 
 class NotesListWidget(QtWidgets.QListWidget):
-    tabToggleRequested = QtCore.pyqtSignal()
+    tripleClicked = QtCore.pyqtSignal(QtWidgets.QListWidgetItem)
 
-    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        if event.key() == QtCore.Qt.Key_Tab:
-            event.accept()
-            self.tabToggleRequested.emit()
-            return
-        super().keyPressEvent(event)
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._click_timer = QtCore.QElapsedTimer()
+        self._click_count = 0
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton:
+            app = QtWidgets.QApplication.instance()
+            interval = app.doubleClickInterval() if app is not None else 400
+            if not self._click_timer.isValid() or self._click_timer.elapsed() > interval:
+                self._click_timer.start()
+                self._click_count = 1
+            else:
+                self._click_count += 1
+            item = self.itemAt(event.pos())
+            if self._click_count == 3 and item is not None:
+                self.tripleClicked.emit(item)
+                self._click_count = 0
+                self._click_timer.invalidate()
+                event.accept()
+                return
+        else:
+            self._click_count = 0
+            self._click_timer.invalidate()
+        super().mousePressEvent(event)
 
 class MyButton(QtWidgets.QPushButton):
     doubleClicked = QtCore.pyqtSignal()
@@ -255,7 +274,7 @@ class FileManagerApp(QtWidgets.QWidget):
         )
 
     def _setup_ui(self) -> None:
-        base_font = QtGui.QFont("Segoe UI", 13)
+        base_font = QtGui.QFont("Segoe UI", 16)
         self.setFont(base_font)
         self.setStyleSheet("""
             QWidget { background: #eaf1fb; color: #1f2430; }
@@ -267,12 +286,13 @@ class FileManagerApp(QtWidgets.QWidget):
             }
             QLabel#SectionTitle {
                 color: #18233d;
+                font-size: 16px;
             }
             QLineEdit {
                 border-radius: 14px; padding: 10px 16px;
                 border: 1px solid rgba(122, 138, 170, 0.35);
                 background: rgba(255,255,255,0.95);
-                font-size: 18px;
+                font-size: 16px;
                 min-height: 44px;
             }
             QPushButton {
@@ -326,41 +346,26 @@ class FileManagerApp(QtWidgets.QWidget):
         layout.setContentsMargins(28, 24, 28, 24)
 
         title = QtWidgets.QLabel("Flow through your folders and ideas")
-        title_font = QtGui.QFont("Segoe UI Semibold", 24)
+        title_font = QtGui.QFont(base_font)
+        title_font.setBold(True)
         title.setFont(title_font)
         title.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         layout.addWidget(title)
 
-        subtitle = QtWidgets.QLabel(
-            "Capture inspiration up top and take action below. Drag folders, type notes, and stay in control."
-        )
-        subtitle.setWordWrap(True)
-        subtitle.setStyleSheet("color: rgba(40, 53, 79, 0.72); font-size: 15px;")
-        layout.addWidget(subtitle)
+        self.tab_widget = QtWidgets.QTabWidget()
+        self.tab_widget.setDocumentMode(True)
+        self.tab_widget.setTabPosition(QtWidgets.QTabWidget.North)
+        layout.addWidget(self.tab_widget, 1)
 
-        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        self.main_splitter.setHandleWidth(12)
-        self.main_splitter.setStyleSheet("QSplitter::handle { background: transparent; }")
-        layout.addWidget(self.main_splitter, 1)
-
+        notes_page = QtWidgets.QWidget()
+        notes_page_layout = QtWidgets.QVBoxLayout(notes_page)
+        notes_page_layout.setContentsMargins(0, 0, 0, 0)
+        notes_page_layout.setSpacing(0)
         notes_card = QtWidgets.QFrame()
         notes_card.setObjectName("CardFrame")
         notes_layout = QtWidgets.QVBoxLayout(notes_card)
         notes_layout.setSpacing(16)
         notes_layout.setContentsMargins(24, 24, 24, 24)
-
-        notes_title = QtWidgets.QLabel("Inspiration & To-dos")
-        notes_title.setObjectName("SectionTitle")
-        notes_title_font = QtGui.QFont("Segoe UI Semibold", 20)
-        notes_title.setFont(notes_title_font)
-        notes_layout.addWidget(notes_title)
-
-        notes_hint = QtWidgets.QLabel(
-            "New entries are time-stamped automatically. Double-click to finish an item, press Tab to switch its mood, and every completed line glides to the bottom."
-        )
-        notes_hint.setWordWrap(True)
-        notes_hint.setStyleSheet("color: rgba(40, 53, 79, 0.68);")
-        notes_layout.addWidget(notes_hint)
 
         notes_input_layout = QtWidgets.QHBoxLayout()
         notes_input_layout.setSpacing(12)
@@ -374,47 +379,34 @@ class FileManagerApp(QtWidgets.QWidget):
         notes_layout.addLayout(notes_input_layout)
 
         self.notes_list = NotesListWidget()
-        self.notes_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.notes_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.notes_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.notes_list.itemSelectionChanged.connect(self._update_notes_actions)
+        self.notes_list.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self.notes_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.notes_list.itemDoubleClicked.connect(self._toggle_note_completion)
-        self.notes_list.tabToggleRequested.connect(self._toggle_selected_note_category)
+        self.notes_list.tripleClicked.connect(self._handle_note_triple_click)
+        self.notes_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.notes_list.customContextMenuRequested.connect(self._show_note_context_menu)
         notes_layout.addWidget(self.notes_list, 1)
+        notes_page_layout.addWidget(notes_card, 1)
+        self.tab_widget.addTab(notes_page, "Inspiration & To-dos")
 
-        notes_actions_layout = QtWidgets.QHBoxLayout()
-        notes_actions_layout.addStretch()
-        self.delete_note_btn = QtWidgets.QPushButton("Delete selected")
-        self.delete_note_btn.clicked.connect(self._delete_selected_notes)
-        notes_actions_layout.addWidget(self.delete_note_btn)
-        notes_layout.addLayout(notes_actions_layout)
-
+        files_page = QtWidgets.QWidget()
+        files_page_layout = QtWidgets.QVBoxLayout(files_page)
+        files_page_layout.setContentsMargins(0, 0, 0, 0)
+        files_page_layout.setSpacing(0)
         files_card = QtWidgets.QFrame()
         files_card.setObjectName("CardFrame")
         file_layout = QtWidgets.QVBoxLayout(files_card)
         file_layout.setSpacing(16)
         file_layout.setContentsMargins(24, 24, 24, 24)
 
-        files_title = QtWidgets.QLabel("Folder workspace")
-        files_title.setObjectName("SectionTitle")
-        files_title_font = QtGui.QFont("Segoe UI Semibold", 20)
-        files_title.setFont(files_title_font)
-        file_layout.addWidget(files_title)
-
-        file_hint = QtWidgets.QLabel(
-            "Drop a folder to manage, or browse for a location. Reorder entries to generate neat numbered names."
-        )
-        file_hint.setWordWrap(True)
-        file_hint.setStyleSheet("color: rgba(40, 53, 79, 0.68);")
-        file_layout.addWidget(file_hint)
-
         path_layout = QtWidgets.QHBoxLayout()
         path_layout.setSpacing(12)
         self.path_edit = QtWidgets.QLineEdit()
-        self.path_edit.setFont(QtGui.QFont("Segoe UI", 18))
         self.path_edit.setPlaceholderText("Paste or drop a folder path here")
         self.path_edit.returnPressed.connect(self._on_path_entry)
         self.browse_btn = MyButton("Browse…")
-        self.browse_btn.setFont(QtGui.QFont("Segoe UI", 16))
         self.browse_btn.clicked.connect(self._select_directory)
         self.browse_btn.doubleClicked.connect(self._on_browse_double_clicked)
         path_layout.addWidget(self.path_edit, 1)
@@ -430,10 +422,8 @@ class FileManagerApp(QtWidgets.QWidget):
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.itemDoubleClicked.connect(self._open_folder_in_explorer)
         file_layout.addWidget(self.list_widget, 1)
-
-        self.main_splitter.addWidget(notes_card)
-        self.main_splitter.addWidget(files_card)
-        self.main_splitter.setSizes([360, 420])
+        files_page_layout.addWidget(files_card, 1)
+        self.tab_widget.addTab(files_page, "Folder workspace")
 
         shadow = QtWidgets.QGraphicsDropShadowEffect(self.list_widget)
         shadow.setBlurRadius(24)
@@ -531,7 +521,7 @@ class FileManagerApp(QtWidgets.QWidget):
     def _apply_note_style(self, item: QtWidgets.QListWidgetItem, data: dict[str, object]) -> None:
         item.setText(self._format_note_text(data))
         font = item.font()
-        font.setPointSize(15)
+        font.setPointSize(self.notes_list.font().pointSize())
         font.setBold(False)
         font.setStrikeOut(bool(data.get("completed", False)))
         item.setFont(font)
@@ -572,17 +562,43 @@ class FileManagerApp(QtWidgets.QWidget):
             self.notes_list.insertItem(0, item)
         self.notes_list.setCurrentItem(item)
         self._save_notes()
-        self._update_notes_actions()
 
-    def _toggle_selected_note_category(self) -> None:
-        item = self.notes_list.currentItem()
-        if not item:
-            return
+    def _set_note_category(self, item: QtWidgets.QListWidgetItem, category: str) -> None:
         data = self._get_note_item_data(item)
-        data["category"] = "todo" if data.get("category") == "idea" else "idea"
+        if data.get("category") == category:
+            return
+        data["category"] = category
         self._set_note_item_data(item, data)
         self._save_notes()
-        self._update_notes_actions()
+
+    def _show_note_context_menu(self, position: QtCore.QPoint) -> None:
+        item = self.notes_list.itemAt(position)
+        if item is None:
+            return
+        data = self._get_note_item_data(item)
+        menu = QtWidgets.QMenu(self.notes_list)
+        toggle_completion_action = menu.addAction("Toggle completion")
+        menu.addSeparator()
+        mark_inspiration_action = menu.addAction("Mark as inspiration")
+        mark_todo_action = menu.addAction("Mark as to-do")
+        if data.get("category") == "idea":
+            mark_inspiration_action.setEnabled(False)
+        else:
+            mark_todo_action.setEnabled(False)
+        chosen = menu.exec_(self.notes_list.viewport().mapToGlobal(position))
+        if chosen == toggle_completion_action:
+            self._toggle_note_completion(item)
+        elif chosen == mark_inspiration_action:
+            self._set_note_category(item, "idea")
+        elif chosen == mark_todo_action:
+            self._set_note_category(item, "todo")
+
+    def _handle_note_triple_click(self, item: QtWidgets.QListWidgetItem) -> None:
+        row = self.notes_list.row(item)
+        if row < 0:
+            return
+        self.notes_list.takeItem(row)
+        self._save_notes()
 
     def _load_notes_from_state(self) -> None:
         notes = self._state.get("notes", [])
@@ -606,7 +622,6 @@ class FileManagerApp(QtWidgets.QWidget):
                 self._set_note_item_data(item, note)
                 self.notes_list.addItem(item)
         self.notes_list.blockSignals(False)
-        self._update_notes_actions()
 
     def _save_notes(self) -> None:
         notes: list[dict[str, object]] = []
@@ -635,21 +650,6 @@ class FileManagerApp(QtWidgets.QWidget):
         self.notes_list.setCurrentItem(item)
         self.note_input.clear()
         self._save_notes()
-        self._update_notes_actions()
-
-    def _delete_selected_notes(self) -> None:
-        selected = self.notes_list.selectedItems()
-        if not selected:
-            return
-        for item in selected:
-            row = self.notes_list.row(item)
-            self.notes_list.takeItem(row)
-        self._save_notes()
-        self._update_notes_actions()
-
-    def _update_notes_actions(self) -> None:
-        has_selection = bool(self.notes_list.selectedItems())
-        self.delete_note_btn.setEnabled(has_selection)
 
     def _select_directory(self) -> None:
         cur_path = self.path_edit.text()
