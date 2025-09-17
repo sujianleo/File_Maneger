@@ -34,6 +34,7 @@ class FileManagerApp(QtWidgets.QWidget):
         self._reserved: set[str] = set()
         self._setup_ui()
         self._setup_blur_overlay()
+        self._load_notes_from_state()
 
         self._last_folder_list = []
         self._timer = QtCore.QTimer(self)
@@ -101,14 +102,14 @@ class FileManagerApp(QtWidgets.QWidget):
 
     def _load_last_state(self) -> dict[str, object]:
         if not os.path.exists(CONFIG_FILE):
-            return {"last_path": "", "reserved": {}}
+            return {"last_path": "", "reserved": {}, "notes": []}
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
         except (OSError, json.JSONDecodeError):
-            return {"last_path": "", "reserved": {}}
+            return {"last_path": "", "reserved": {}, "notes": []}
         if not isinstance(data, dict):
-            return {"last_path": "", "reserved": {}}
+            return {"last_path": "", "reserved": {}, "notes": []}
         reserved = data.get("reserved", {})
         if not isinstance(reserved, dict):
             reserved = {}
@@ -122,6 +123,12 @@ class FileManagerApp(QtWidgets.QWidget):
         data["reserved"] = reserved
         if "last_path" not in data or not isinstance(data["last_path"], str):
             data["last_path"] = ""
+        notes = data.get("notes", [])
+        if isinstance(notes, list):
+            notes = [str(item) for item in notes if isinstance(item, str)]
+        else:
+            notes = []
+        data["notes"] = notes
         return data
 
     def _get_reserved_dict(self) -> dict[str, list[str]]:
@@ -263,6 +270,14 @@ class FileManagerApp(QtWidgets.QWidget):
         layout.setSpacing(4)
         layout.setContentsMargins(8, 8, 8, 4)
 
+        self.tabs = QtWidgets.QTabWidget()
+        layout.addWidget(self.tabs)
+
+        file_tab = QtWidgets.QWidget()
+        file_layout = QtWidgets.QVBoxLayout(file_tab)
+        file_layout.setSpacing(4)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+
         path_layout = QtWidgets.QHBoxLayout()
         path_layout.setSpacing(4)
         self.path_edit = QtWidgets.QLineEdit()
@@ -274,7 +289,7 @@ class FileManagerApp(QtWidgets.QWidget):
         self.browse_btn.doubleClicked.connect(self._on_browse_double_clicked)
         path_layout.addWidget(self.path_edit)
         path_layout.addWidget(self.browse_btn)
-        layout.addLayout(path_layout)
+        file_layout.addLayout(path_layout)
 
         self.list_widget = SortListWidget()
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
@@ -284,7 +299,48 @@ class FileManagerApp(QtWidgets.QWidget):
         self.list_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.itemDoubleClicked.connect(self._open_folder_in_explorer)
-        layout.addWidget(self.list_widget)
+        file_layout.addWidget(self.list_widget)
+
+        self.tabs.addTab(file_tab, "文件整理")
+
+        notes_tab = QtWidgets.QWidget()
+        notes_layout = QtWidgets.QVBoxLayout(notes_tab)
+        notes_layout.setSpacing(6)
+        notes_layout.setContentsMargins(4, 4, 4, 4)
+
+        notes_label = QtWidgets.QLabel("记录灵感或待办事项，每条一行，双击可直接编辑。")
+        notes_label.setWordWrap(True)
+        notes_layout.addWidget(notes_label)
+
+        notes_input_layout = QtWidgets.QHBoxLayout()
+        notes_input_layout.setSpacing(4)
+        self.note_input = QtWidgets.QLineEdit()
+        self.note_input.setPlaceholderText("输入新的灵感或代办事项，按回车或点击添加")
+        self.note_input.returnPressed.connect(self._add_note)
+        self.add_note_btn = QtWidgets.QPushButton("添加")
+        self.add_note_btn.clicked.connect(self._add_note)
+        notes_input_layout.addWidget(self.note_input)
+        notes_input_layout.addWidget(self.add_note_btn)
+        notes_layout.addLayout(notes_input_layout)
+
+        self.notes_list = QtWidgets.QListWidget()
+        self.notes_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.notes_list.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
+        self.notes_list.itemChanged.connect(self._on_note_changed)
+        self.notes_list.itemSelectionChanged.connect(self._update_notes_actions)
+        notes_layout.addWidget(self.notes_list)
+
+        notes_actions_layout = QtWidgets.QHBoxLayout()
+        notes_actions_layout.addStretch()
+        self.delete_note_btn = QtWidgets.QPushButton("删除所选")
+        self.delete_note_btn.clicked.connect(self._delete_selected_notes)
+        notes_actions_layout.addWidget(self.delete_note_btn)
+        notes_layout.addLayout(notes_actions_layout)
+
+        self.tabs.addTab(notes_tab, "灵感与代办")
 
         shadow = QtWidgets.QGraphicsDropShadowEffect(self.list_widget)
         shadow.setBlurRadius(16)
@@ -344,8 +400,54 @@ class FileManagerApp(QtWidgets.QWidget):
         top_h = self.path_edit.sizeHint().height() + 10 + 16
         bottom_h = 18
         total_h = top_h + list_h + bottom_h
-        self.setFixedHeight(total_h)
+        self.list_widget.setMinimumHeight(list_h)
         self._last_folder_list = folders
+
+    def _load_notes_from_state(self) -> None:
+        notes = self._state.get("notes", [])
+        if not isinstance(notes, list):
+            notes = []
+        self.notes_list.blockSignals(True)
+        self.notes_list.clear()
+        for text in notes:
+            item = QtWidgets.QListWidgetItem(text)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+            self.notes_list.addItem(item)
+        self.notes_list.blockSignals(False)
+        self._update_notes_actions()
+
+    def _save_notes(self) -> None:
+        notes = [self.notes_list.item(i).text() for i in range(self.notes_list.count())]
+        self._state["notes"] = notes
+        self._write_state()
+
+    def _add_note(self) -> None:
+        text = self.note_input.text().strip()
+        if not text:
+            return
+        item = QtWidgets.QListWidgetItem(text)
+        item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+        self.notes_list.addItem(item)
+        self.note_input.clear()
+        self._save_notes()
+        self._update_notes_actions()
+
+    def _delete_selected_notes(self) -> None:
+        selected = self.notes_list.selectedItems()
+        if not selected:
+            return
+        for item in selected:
+            row = self.notes_list.row(item)
+            self.notes_list.takeItem(row)
+        self._save_notes()
+        self._update_notes_actions()
+
+    def _on_note_changed(self, _item: QtWidgets.QListWidgetItem) -> None:
+        self._save_notes()
+
+    def _update_notes_actions(self) -> None:
+        has_selection = bool(self.notes_list.selectedItems())
+        self.delete_note_btn.setEnabled(has_selection)
 
     def _select_directory(self) -> None:
         cur_path = self.path_edit.text()
