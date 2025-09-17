@@ -20,18 +20,25 @@ After launching, input or choose the folder path you want to manage.
 - **Remember path**: The last opened path is stored in `last_state.json` for next time.
 - **Drag paths**: Drag a folder onto the window to switch paths, with the list refreshing automatically.
 - **Bulk delete**: Delete multiple selected folders from the context menu.
+- **Keep folders**: Mark folders as preserved from the context menu so they are skipped when sorting or clearing numbers.
 - **Auto refresh**: The app periodically checks the directory for changes and refreshes the list.
+- **Locked folder warning**: If an operation fails because a folder is in use, a dialog reminds you to close the other program first.
 - **Status overlay**: An overlay appears when sorting starts or pauses; double-clicking "Browse..." temporarily enlarges the window.
 
 ## Build an executable
 
-Use `file_manager.spec` with [PyInstaller](https://pyinstaller.org/) to create an executable:
+There are two options using [PyInstaller](https://pyinstaller.org/):
 
-```bash
-pyinstaller file_manager.spec
-```
-
-The result is placed in the `dist/` directory.
+- **Single file (existing approach)**:
+  ```bash
+  pyinstaller file_manager.spec
+  ```
+  The executable is written into the `dist/` directory.
+- **Directory build (faster startup)**:
+  ```bash
+  python build_dist.py
+  ```
+  This script produces a `dist/file_manager/` folder so the app can start without the one-file extraction delay.
 
 ## License
 
