@@ -281,22 +281,23 @@ class FileManagerApp(QtWidgets.QWidget):
             QFrame#CardFrame {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 rgba(255,255,255,0.96), stop:1 rgba(243,247,255,0.96));
-                border-radius: 22px;
-                border: 1px solid rgba(164, 180, 207, 0.45);
+                border-radius: 8px;
+                border: 1px solid rgba(164, 180, 207, 0.25);
             }
             QLabel#SectionTitle {
                 color: #18233d;
                 font-size: 16px;
             }
             QLineEdit {
-                border-radius: 14px; padding: 10px 16px;
-                border: 1px solid rgba(122, 138, 170, 0.35);
-                background: rgba(255,255,255,0.95);
-                font-size: 16px;
+                border-radius: 6px; padding: 10px 16px;
+                border: 1px solid rgba(122, 138, 170, 0.2);
+                background: #ffffff;
+                font-size: 18px;
                 min-height: 44px;
+                color: #000000;
             }
             QPushButton {
-                border-radius: 16px; background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                border-radius: 6px; background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #6c8cff, stop:1 #4f56ff);
                 color: white; padding: 10px 24px;
                 font-size: 16px; font-weight: 600;
@@ -305,13 +306,13 @@ class FileManagerApp(QtWidgets.QWidget):
             QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #5474ff, stop:1 #3d43f5); }
             QListWidget {
-                border-radius: 18px;
-                border: 1px solid rgba(152, 167, 196, 0.35);
-                background: rgba(255,255,255,0.9); font-size: 16px;
+                border-radius: 8px;
+                border: 1px solid rgba(152, 167, 196, 0.2);
+                background: #ffffff; font-size: 16px;
                 padding: 6px;
             }
             QListWidget::item {
-                height: 40px; border-radius: 14px; padding-left: 12px;
+                height: 40px; border-radius: 6px; padding-left: 12px;
             }
             QListWidget::item:selected:active {
                 background: rgba(86, 112, 255, 0.18); color: #1a1f2b;
@@ -344,13 +345,6 @@ class FileManagerApp(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(20)
         layout.setContentsMargins(28, 24, 28, 24)
-
-        title = QtWidgets.QLabel("Flow through your folders and ideas")
-        title_font = QtGui.QFont(base_font)
-        title_font.setBold(True)
-        title.setFont(title_font)
-        title.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(title)
 
         self.tab_widget = QtWidgets.QTabWidget()
         self.tab_widget.setDocumentMode(True)
@@ -389,7 +383,7 @@ class FileManagerApp(QtWidgets.QWidget):
         self.notes_list.customContextMenuRequested.connect(self._show_note_context_menu)
         notes_layout.addWidget(self.notes_list, 1)
         notes_page_layout.addWidget(notes_card, 1)
-        self.tab_widget.addTab(notes_page, "Inspiration & To-dos")
+        self.tab_widget.addTab(notes_page, "To-dos")
 
         files_page = QtWidgets.QWidget()
         files_page_layout = QtWidgets.QVBoxLayout(files_page)
