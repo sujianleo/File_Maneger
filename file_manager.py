@@ -22,6 +22,10 @@ FIELD_BORDER_WIDTH = 1.0
 SCROLLBAR_RADIUS = 4
 SCROLLBAR_HANDLE_RADIUS = 4
 
+DEFAULT_FONT_BASE = 30
+MIN_FONT_BASE = 20
+MAX_FONT_BASE = 48
+
 
 class NotesListWidget(QtWidgets.QListWidget):
     tripleClicked = QtCore.pyqtSignal(QtWidgets.QListWidgetItem)
@@ -67,8 +71,9 @@ class SortListWidget(QtWidgets.QListWidget):
         self.itemDropped.emit()
 
 
-class NoteWidget(QtWidgets.QWidget):
-    """两行文字的便签部件"""
+class NoteWidget(QtWidgets.QFrame):
+    """Compact note widget with fixed timestamp placement."""
+
     def __init__(
         self,
         timestamp: str,
@@ -76,57 +81,95 @@ class NoteWidget(QtWidgets.QWidget):
         category: str = "idea",
         completed: bool = False,
         pinned: bool = False,
-        parent: QtWidgets.QWidget | None = None
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        content_size: int = 28,
+        time_size: int = 20,
     ) -> None:
         super().__init__(parent)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(10, 14, 10, 14)
-        layout.setSpacing(4)
+        self.setObjectName("NoteItemFrame")
+        self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Minimum,
+        )
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(12)
 
         self.content_label = QtWidgets.QLabel(content)
-        content_font = QtGui.QFont()
-        content_font.setPointSize(28)
-        content_font.setWeight(QtGui.QFont.Weight.Medium)
-        self.content_label.setFont(content_font)
         self.content_label.setWordWrap(True)
+        self.content_label.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop
+        )
+        self.content_label.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.content_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.MinimumExpanding,
+        )
 
         formatted = self._format_timestamp(timestamp)
         self.time_label = QtWidgets.QLabel(formatted)
-        time_font = QtGui.QFont()
-        time_font.setPointSize(20)
-        self.time_label.setFont(time_font)
+        self.time_label.setObjectName("NoteTimestampLabel")
         self.time_label.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+            QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignTop
         )
-
-        row_layout = QtWidgets.QHBoxLayout()
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(6)
-        self.content_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Policy.Expanding,
+        self.time_label.setFixedWidth(116)
+        self.time_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed,
             QtWidgets.QSizePolicy.Policy.Preferred,
         )
-        row_layout.addWidget(self.content_label, 1)
-        row_layout.addWidget(self.time_label)
-        layout.addLayout(row_layout)
+        self.time_label.setWordWrap(False)
+        self.time_label.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.NoTextInteraction
+        )
+        self.time_label.setContextMenuPolicy(
+            QtCore.Qt.ContextMenuPolicy.PreventContextMenu
+        )
 
+        layout.addWidget(self.content_label, 1)
+        layout.addWidget(self.time_label, 0)
+        layout.setStretch(0, 1)
+
+        self.set_font_sizes(content_size, time_size)
         self.update_style(category, completed, pinned)
 
+    def set_font_sizes(self, content_size: int, time_size: int) -> None:
+        content_font = QtGui.QFont(self.content_label.font())
+        content_font.setPointSize(max(1, content_size))
+        content_font.setWeight(QtGui.QFont.Weight.Medium)
+        self.content_label.setFont(content_font)
+
+        time_font = QtGui.QFont(self.time_label.font())
+        time_font.setPointSize(max(1, time_size))
+        self.time_label.setFont(time_font)
+
     def update_style(self, category: str, completed: bool, pinned: bool) -> None:
-        if pinned:
-            self.setStyleSheet("background: rgba(254,202,202,0.35); border: none; border-radius: 12px;")
-        else:
-            self.setStyleSheet("background: transparent; border: none;")
-        self.time_label.setStyleSheet("color: #94a3b8;")
+        self.setProperty("pinned", bool(pinned))
+        self.setProperty("completed", bool(completed))
+        style = self.style()
+        if style is not None:
+            style.unpolish(self)
+            style.polish(self)
+        self.update()
 
         if completed:
-            self.content_label.setStyleSheet("color: #475569; text-decoration: line-through;")
+            self.content_label.setStyleSheet(
+                "color: #475569; text-decoration: line-through; font-weight: 500;"
+            )
+        elif category == "todo":
+            self.content_label.setStyleSheet(
+                "color: #0f172a; font-weight: 600; text-decoration: none;"
+            )
         else:
-            if category == "todo":
-                self.content_label.setStyleSheet("color: #111827; font-weight: 600; text-decoration: none;")
-            else:  # idea
-                self.content_label.setStyleSheet("color: #1f2937; font-weight: 600; text-decoration: none;")
+            self.content_label.setStyleSheet(
+                "color: #1f2937; font-weight: 600; text-decoration: none;"
+            )
 
     @staticmethod
     def _format_timestamp(value: str) -> str:
@@ -144,6 +187,7 @@ class FileManagerApp(QtWidgets.QWidget):
         flags = (
             QtCore.Qt.WindowType.Window
             | QtCore.Qt.WindowType.WindowSystemMenuHint
+            | QtCore.Qt.WindowType.WindowCloseButtonHint
             | QtCore.Qt.WindowType.WindowMinimizeButtonHint
             | QtCore.Qt.WindowType.WindowMaximizeButtonHint
         )
@@ -151,6 +195,8 @@ class FileManagerApp(QtWidgets.QWidget):
         self.setAcceptDrops(True)
         self.sort_paused = True
         self._state: dict[str, object] = self._load_last_state()
+        base_font = int(self._state.get("font_base", DEFAULT_FONT_BASE) or DEFAULT_FONT_BASE)
+        self._font_sizes = self._compute_font_sizes(base_font)
         self._current_path = ""
         self._reserved: set[str] = set()
         # window drag/resize states
@@ -186,6 +232,7 @@ class FileManagerApp(QtWidgets.QWidget):
         # force card theme by default (user requested keep card)
         theme = "card"
         self._apply_theme(theme)
+        self._apply_font_settings(save_state=False)
 
     def _setup_blur_overlay(self) -> None:
         parent = self.list_widget.parentWidget()
@@ -332,17 +379,6 @@ class FileManagerApp(QtWidgets.QWidget):
         return None
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
-        try:
-            pad = 6
-            if hasattr(self, '_close_btn'):
-                # keep the small close button in the top-left and ensure it's on top
-                self._close_btn.move(pad, pad)
-                try:
-                    self._close_btn.raise_()
-                except Exception:
-                    pass
-        except Exception:
-            pass
         return super().resizeEvent(event)
 
     def _perform_resize(self, global_pos: QtCore.QPoint) -> None:
@@ -385,6 +421,165 @@ class FileManagerApp(QtWidgets.QWidget):
     def _hide_blur(self):
         self.blur_overlay.hide()
 
+    # ------------------ Font helpers ------------------
+    def _compute_font_sizes(self, base: int) -> dict[str, int]:
+        base_int = max(MIN_FONT_BASE, min(MAX_FONT_BASE, int(base)))
+        return {
+            "base": base_int,
+            "input": max(14, base_int + 2),
+            "button": max(14, base_int),
+            "list": max(14, base_int),
+            "note_content": max(12, base_int - 2),
+            "note_time": max(10, base_int - 10),
+            "menu": max(12, base_int - 2),
+        }
+
+    def _calculate_field_height(self) -> int:
+        return max(48, int(round(self._font_sizes["input"] * 2.4)))
+
+    def _calculate_scroll_handle_height(self) -> int:
+        return max(48, int(round(self._font_sizes["base"] * 2.0)))
+
+    def _apply_font_settings(self, *, save_state: bool = True) -> None:
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            try:
+                font = QtGui.QFont(app.font())
+                font.setPointSize(self._font_sizes["base"])
+                if hasattr(font, "setFamilies"):
+                    font.setFamilies([
+                        "Inter",
+                        "Segoe UI",
+                        "Microsoft YaHei",
+                        "PingFang SC",
+                        "Helvetica Neue",
+                        "Arial",
+                    ])
+                else:
+                    font.setFamily("Inter")
+                app.setFont(font)
+            except Exception:
+                pass
+
+        if hasattr(self, "note_input"):
+            try:
+                input_font = QtGui.QFont(self.note_input.font())
+                input_font.setPointSize(self._font_sizes["input"])
+                self.note_input.setFont(input_font)
+                self.note_input.setFixedHeight(self._calculate_field_height())
+            except Exception:
+                pass
+
+        if hasattr(self, "path_edit"):
+            try:
+                path_font = QtGui.QFont(self.path_edit.font())
+                path_font.setPointSize(self._font_sizes["input"])
+                self.path_edit.setFont(path_font)
+                self.path_edit.setFixedHeight(self._calculate_field_height())
+            except Exception:
+                pass
+
+        if hasattr(self, "notes_list"):
+            try:
+                notes_font = QtGui.QFont(self.notes_list.font())
+                notes_font.setPointSize(self._font_sizes["note_content"])
+                self.notes_list.setFont(notes_font)
+                self._update_note_item_fonts()
+            except Exception:
+                pass
+
+        if hasattr(self, "list_widget"):
+            try:
+                list_font = QtGui.QFont(self.list_widget.font())
+                list_font.setPointSize(self._font_sizes["list"])
+                self.list_widget.setFont(list_font)
+                for row in range(self.list_widget.count()):
+                    item = self.list_widget.item(row)
+                    if item is not None:
+                        item.setFont(QtGui.QFont(list_font))
+                self._update_folder_list_metrics()
+            except Exception:
+                pass
+
+        if hasattr(self, "tab_widget"):
+            try:
+                tab_font = QtGui.QFont(self.tab_widget.font())
+                tab_font.setPointSize(self._font_sizes["button"])
+                self.tab_widget.setFont(tab_font)
+            except Exception:
+                pass
+
+        try:
+            self.setStyleSheet(self._get_stylesheet())
+        except Exception:
+            pass
+
+        layout = self.layout()
+        if layout is not None:
+            try:
+                layout.activate()
+            except Exception:
+                pass
+        self.updateGeometry()
+
+        if save_state:
+            self._state["font_base"] = self._font_sizes["base"]
+            self._write_state()
+
+    def _update_note_item_fonts(self) -> None:
+        if not hasattr(self, "notes_list"):
+            return
+        for row in range(self.notes_list.count()):
+            item = self.notes_list.item(row)
+            widget = self.notes_list.itemWidget(item)
+            if isinstance(widget, NoteWidget):
+                widget.set_font_sizes(
+                    self._font_sizes["note_content"],
+                    self._font_sizes["note_time"],
+                )
+                item.setSizeHint(widget.sizeHint())
+        self.notes_list.updateGeometry()
+
+    def _update_folder_list_metrics(self) -> None:
+        if not hasattr(self, "list_widget"):
+            return
+        count = self.list_widget.count()
+        if count:
+            row_h = self.list_widget.sizeHintForRow(0)
+            if row_h <= 0:
+                row_h = max(48, int(round(self._font_sizes["list"] * 2.2)))
+            list_h = max(480, min(count, 30) * row_h + 4)
+            self.list_widget.setMinimumHeight(list_h)
+        else:
+            self.list_widget.setMinimumHeight(480)
+        self.list_widget.updateGeometry()
+
+    def _apply_menu_style(self, menu: QtWidgets.QMenu) -> None:
+        if menu is None:
+            return
+        menu.setStyleSheet(
+            f"""
+            QMenu {{ font-size:{self._font_sizes['menu']}px; }}
+            QMenu::item:selected {{ background-color: #3794ff; color: #fff; }}
+            """
+        )
+
+    def _change_font_size(self, delta: int) -> None:
+        new_base = max(
+            MIN_FONT_BASE,
+            min(MAX_FONT_BASE, self._font_sizes["base"] + int(delta)),
+        )
+        if new_base == self._font_sizes["base"]:
+            return
+        self._font_sizes = self._compute_font_sizes(new_base)
+        self._apply_font_settings()
+
+    def _reset_font_size(self) -> None:
+        if self._font_sizes["base"] == DEFAULT_FONT_BASE:
+            return
+        self._font_sizes = self._compute_font_sizes(DEFAULT_FONT_BASE)
+        self._apply_font_settings()
+
     # ------------------ State I/O ------------------
     def _save_last_state(self, path: str) -> None:
         self._state["last_path"] = path
@@ -399,14 +594,29 @@ class FileManagerApp(QtWidgets.QWidget):
 
     def _load_last_state(self) -> dict[str, object]:
         if not os.path.exists(CONFIG_FILE):
-            return {"last_path": "", "reserved": {}, "notes": []}
+            return {
+                "last_path": "",
+                "reserved": {},
+                "notes": [],
+                "font_base": DEFAULT_FONT_BASE,
+            }
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
         except (OSError, json.JSONDecodeError):
-            return {"last_path": "", "reserved": {}, "notes": []}
+            return {
+                "last_path": "",
+                "reserved": {},
+                "notes": [],
+                "font_base": DEFAULT_FONT_BASE,
+            }
         if not isinstance(data, dict):
-            return {"last_path": "", "reserved": {}, "notes": []}
+            return {
+                "last_path": "",
+                "reserved": {},
+                "notes": [],
+                "font_base": DEFAULT_FONT_BASE,
+            }
         reserved = data.get("reserved", {})
         if not isinstance(reserved, dict):
             reserved = {}
@@ -446,6 +656,13 @@ class FileManagerApp(QtWidgets.QWidget):
                              "category": "idea", "completed": False}
                         )
         data["notes"] = normalized_notes
+        font_base = data.get("font_base", DEFAULT_FONT_BASE)
+        try:
+            font_base = int(font_base)
+        except (TypeError, ValueError):
+            font_base = DEFAULT_FONT_BASE
+        font_base = max(MIN_FONT_BASE, min(MAX_FONT_BASE, font_base))
+        data["font_base"] = font_base
         return data
 
     def _get_reserved_dict(self) -> dict[str, list[str]]:
@@ -546,14 +763,6 @@ class FileManagerApp(QtWidgets.QWidget):
         layout.setSpacing(8)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        self._close_btn = QtWidgets.QPushButton(self)
-        self._close_btn.setFixedSize(12, 12)
-        self._close_btn.setToolTip("Close")
-        self._close_btn.setObjectName("MacCloseButton")
-        self._close_btn.setFlat(True)
-        self._close_btn.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        self._close_btn.clicked.connect(self.close)
-
         self.tab_widget = QtWidgets.QTabWidget()
         self.tab_widget.setDocumentMode(True)
         self.tab_widget.setTabPosition(QtWidgets.QTabWidget.TabPosition.North)
@@ -561,15 +770,15 @@ class FileManagerApp(QtWidgets.QWidget):
 
         self._build_notes_tab()
         self._build_folder_tab()
-        self._apply_mac_close_style()
+        self._apply_list_shadow()
 
     def _configure_window(self) -> None:
         self.setWindowTitle("Folder Flow Organizer")
         app = QtWidgets.QApplication.instance()
         if app is not None:
             try:
-                font = QtGui.QFont()
-                font.setPointSize(26)
+                font = QtGui.QFont(app.font())
+                font.setPointSize(self._font_sizes["base"])
                 if hasattr(font, "setFamilies"):
                     font.setFamilies([
                         "Inter",
@@ -589,19 +798,22 @@ class FileManagerApp(QtWidgets.QWidget):
         notes_page = QtWidgets.QWidget()
         notes_page_layout = QtWidgets.QVBoxLayout(notes_page)
         notes_page_layout.setContentsMargins(0, 0, 0, 0)
-        notes_page_layout.setSpacing(8)
+        notes_page_layout.setSpacing(6)
 
         notes_card = QtWidgets.QFrame()
         notes_card.setObjectName("CardFrame")
         notes_layout = QtWidgets.QVBoxLayout(notes_card)
-        notes_layout.setSpacing(8)
-        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.setSpacing(6)
+        notes_layout.setContentsMargins(10, 10, 10, 10)
 
         notes_input_layout = QtWidgets.QHBoxLayout()
         notes_input_layout.setSpacing(8)
         self.note_input = QtWidgets.QLineEdit()
         self.note_input.setPlaceholderText("Write a spark or a task and press Enter")
-        self.note_input.setFixedHeight(72)
+        self.note_input.setFixedHeight(self._calculate_field_height())
+        note_input_font = QtGui.QFont(self.note_input.font())
+        note_input_font.setPointSize(self._font_sizes["input"])
+        self.note_input.setFont(note_input_font)
         self.note_input.returnPressed.connect(self._add_note)
         notes_input_layout.addWidget(self.note_input, 1)
         notes_layout.addLayout(notes_input_layout)
@@ -612,8 +824,9 @@ class FileManagerApp(QtWidgets.QWidget):
         self.notes_list.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.notes_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.notes_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.notes_list.setSpacing(4)
         notes_font = QtGui.QFont(self.notes_list.font())
-        notes_font.setPointSize(max(26, notes_font.pointSize()))
+        notes_font.setPointSize(self._font_sizes["note_content"])
         self.notes_list.setFont(notes_font)
         self.notes_list.itemDoubleClicked.connect(self._toggle_note_completion)
         self.notes_list.tripleClicked.connect(self._handle_note_triple_click)
@@ -640,7 +853,10 @@ class FileManagerApp(QtWidgets.QWidget):
         path_layout.setSpacing(8)
         self.path_edit = QtWidgets.QLineEdit()
         self.path_edit.setPlaceholderText("Paste or drop a folder path here")
-        self.path_edit.setFixedHeight(72)
+        self.path_edit.setFixedHeight(self._calculate_field_height())
+        path_font = QtGui.QFont(self.path_edit.font())
+        path_font.setPointSize(self._font_sizes["input"])
+        self.path_edit.setFont(path_font)
         self.path_edit.returnPressed.connect(self._on_path_entry)
         path_layout.addWidget(self.path_edit, 1)
         file_layout.addLayout(path_layout)
@@ -653,7 +869,7 @@ class FileManagerApp(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Expanding,
         )
         list_font = QtGui.QFont(self.list_widget.font())
-        list_font.setPointSize(max(28, list_font.pointSize()))
+        list_font.setPointSize(self._font_sizes["list"])
         self.list_widget.setFont(list_font)
         self.list_widget.itemDropped.connect(self._on_drop)
         self.list_widget.currentRowChanged.connect(self._on_select)
@@ -665,21 +881,13 @@ class FileManagerApp(QtWidgets.QWidget):
         files_page_layout.addWidget(files_card, 1)
         self.tab_widget.addTab(files_page, "Folder")
 
-    def _apply_mac_close_style(self) -> None:
+    def _apply_list_shadow(self) -> None:
         shadow = QtWidgets.QGraphicsDropShadowEffect(self.list_widget)
         shadow.setBlurRadius(4)
         shadow.setXOffset(0)
         shadow.setYOffset(1)
         shadow.setColor(QtGui.QColor(0, 0, 0, 12))
         self.list_widget.setGraphicsEffect(shadow)
-
-        current = self.styleSheet()
-        mac_close_css = (
-            "\n#MacCloseButton { border-radius:6px; background:#ff5f57; border:1px solid rgba(0,0,0,0.08);"
-            " width:12px; height:12px; padding:0px; margin:0px; } #MacCloseButton:hover { background:#ff7b6b; }\n"
-        )
-        if mac_close_css not in current:
-            self.setStyleSheet(current + mac_close_css)
 
     # ------------------ Notes (single source) ------------------
     def _render_notes(self) -> None:
@@ -713,6 +921,8 @@ class FileManagerApp(QtWidgets.QWidget):
                 category=str(note.get("category", "idea")),
                 completed=bool(note.get("completed", False)),
                 pinned=bool(note.get("pinned", False)),
+                content_size=self._font_sizes["note_content"],
+                time_size=self._font_sizes["note_time"],
             )
             item.setSizeHint(widget.sizeHint())
             self.notes_list.addItem(item)
@@ -810,25 +1020,49 @@ class FileManagerApp(QtWidgets.QWidget):
         self._save_notes()
 
     def _show_note_context_menu(self, position: QtCore.QPoint) -> None:
-        item = self.notes_list.itemAt(position)
         menu = QtWidgets.QMenu(self.notes_list)
         view = self.notes_list.viewport()
         if view is None:
             return
 
-        if item is None:
-            return
+        item = self.notes_list.itemAt(position)
+        toggle_completion_action = None
+        mark_inspiration_action = None
+        mark_todo_action = None
+        pin_action = None
+        if item is not None:
+            row = self.notes_list.row(item)
+            if 0 <= row < len(self._notes):
+                data = self._notes[row]
+                toggle_completion_action = menu.addAction("Toggle completion")
+                menu.addSeparator()
+                mark_inspiration_action = menu.addAction("Mark as inspiration")
+                mark_todo_action = menu.addAction("Mark as to-do")
+                menu.addSeparator()
+                pinned = bool(data.get("pinned", False))
+                pin_action = menu.addAction("Unpin" if pinned else "Pin to top")
+                menu.addSeparator()
 
-        data = self._notes[self.notes_list.row(item)]
-        toggle_completion_action = menu.addAction("Toggle completion")
-        menu.addSeparator()
-        mark_inspiration_action = menu.addAction("Mark as inspiration")
-        mark_todo_action = menu.addAction("Mark as to-do")
-        menu.addSeparator()
-        pinned = bool(data.get("pinned", False))
-        pin_action = menu.addAction("Unpin" if pinned else "Pin to top")
+        increase_font_action = menu.addAction("Increase font size")
+        decrease_font_action = menu.addAction("Decrease font size")
+        reset_font_action = menu.addAction("Reset font size")
+        increase_font_action.setEnabled(self._font_sizes["base"] < MAX_FONT_BASE)
+        decrease_font_action.setEnabled(self._font_sizes["base"] > MIN_FONT_BASE)
+        reset_font_action.setEnabled(self._font_sizes["base"] != DEFAULT_FONT_BASE)
 
+        self._apply_menu_style(menu)
         chosen = menu.exec(view.mapToGlobal(position))
+        if chosen == increase_font_action:
+            self._change_font_size(2)
+            return
+        if chosen == decrease_font_action:
+            self._change_font_size(-2)
+            return
+        if chosen == reset_font_action:
+            self._reset_font_size()
+            return
+        if item is None or chosen is None:
+            return
         if chosen == toggle_completion_action:
             self._toggle_note_completion(item)
         elif chosen == mark_inspiration_action:
@@ -895,6 +1129,7 @@ class FileManagerApp(QtWidgets.QWidget):
 
         for folder in folders:
             item = QtWidgets.QListWidgetItem(folder)
+            item.setFont(QtGui.QFont(self.list_widget.font()))
             self._apply_reserved_style(item, folder in self._reserved)
             self.list_widget.addItem(item)
         for row in range(self.list_widget.count()):
@@ -1179,10 +1414,14 @@ class FileManagerApp(QtWidgets.QWidget):
             menu.addAction("Start sorting", self._resume_sort)
         else:
             menu.addAction("Pause sorting", self._pause_sort)
-        menu.setStyleSheet("""
-            QMenu { font-size:30px; }
-            QMenu::item:selected { background-color: #3794ff; color: #fff; }
-        """)
+        menu.addSeparator()
+        increase_font_action = menu.addAction("Increase font size", lambda: self._change_font_size(2))
+        decrease_font_action = menu.addAction("Decrease font size", lambda: self._change_font_size(-2))
+        reset_font_action = menu.addAction("Reset font size", self._reset_font_size)
+        increase_font_action.setEnabled(self._font_sizes["base"] < MAX_FONT_BASE)
+        decrease_font_action.setEnabled(self._font_sizes["base"] > MIN_FONT_BASE)
+        reset_font_action.setEnabled(self._font_sizes["base"] != DEFAULT_FONT_BASE)
+        self._apply_menu_style(menu)
         menu.exec(self.list_widget.mapToGlobal(pos))
 
     def _paste_and_open_folder(self) -> None:
@@ -1211,22 +1450,23 @@ class FileManagerApp(QtWidgets.QWidget):
     # removed system tray and background behavior — app runs in foreground only
 
     # ------------------ Theme: beautified baseline + overrides ------------------
-    def _apply_theme(self, theme: str) -> None:
-        self._current_theme = theme
-
+    def _get_stylesheet(self, theme: str | None = None) -> str:
+        if theme is None:
+            theme = getattr(self, "_current_theme", "card")
+        scroll_handle = self._calculate_scroll_handle_height()
         base_css = f"""
             QWidget {{
                 background: #f4f5f7;
                 color: #1f2937;
                 font-family: "Inter", "Segoe UI", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
-                font-size: 30px;
+                font-size: {self._font_sizes['base']}px;
             }}
             QLineEdit {{
                 border-radius: {SMALL_RADIUS}px;
                 padding: 12px 20px;
                 border: 1px solid #d1d5db;
                 background: #ffffff;
-                font-size: 32px;
+                font-size: {self._font_sizes['input']}px;
             }}
             QFrame#CardFrame {{
                 background: #ffffff;
@@ -1238,7 +1478,7 @@ class FileManagerApp(QtWidgets.QWidget):
                 background: #4f46e5;
                 color: #ffffff;
                 padding: 12px 28px;
-                font-size: 30px;
+                font-size: {self._font_sizes['button']}px;
                 font-weight: 600;
             }}
             QPushButton:hover {{ background: #4338ca; }}
@@ -1247,7 +1487,7 @@ class FileManagerApp(QtWidgets.QWidget):
                 border-radius: {CARD_RADIUS}px;
                 border: 1px solid #e5e7eb;
                 background: #ffffff;
-                font-size: 30px;
+                font-size: {self._font_sizes['list']}px;
                 padding: 12px;
             }}
             QListWidget::item:hover {{
@@ -1272,8 +1512,21 @@ class FileManagerApp(QtWidgets.QWidget):
                 background: #4f46e5;
                 color: #ffffff;
             }}
-            #MacCloseButton {{ border-radius:7px; background:#ef4444; border:1px solid rgba(0,0,0,0.08); }}
-            #MacCloseButton:hover {{ background:#dc2626; }}
+            QFrame#NoteItemFrame {{
+                background: rgba(255,255,255,0.92);
+                border: 1px solid rgba(148,163,184,0.35);
+                border-radius: {CARD_RADIUS}px;
+            }}
+            QFrame#NoteItemFrame[pinned="true"] {{
+                background: rgba(255,255,255,0.98);
+                border: 1px solid rgba(79,70,229,0.35);
+                border-left: 4px solid #f97316;
+            }}
+            QFrame#NoteItemFrame QLabel {{ background: transparent; }}
+            QLabel#NoteTimestampLabel {{
+                color: #64748b;
+                font-weight: 600;
+            }}
             QScrollBar:vertical {{
                 border: none;
                 background: transparent;
@@ -1283,7 +1536,7 @@ class FileManagerApp(QtWidgets.QWidget):
             }}
             QScrollBar::handle:vertical {{
                 background: rgba(79,70,229,0.75);
-                min-height: 72px;
+                min-height: {scroll_handle}px;
                 border: none;
                 border-radius: {SCROLLBAR_HANDLE_RADIUS}px;
             }}
@@ -1297,6 +1550,9 @@ class FileManagerApp(QtWidgets.QWidget):
                 QWidget { background: #1e1e1e; color: #d4d4d4; }
                 QLineEdit { background: #252526; color: #d4d4d4; border: 1px solid #3c3c3c; }
                 QFrame#CardFrame { background: #2d2d2d; border: 1px solid #3c3c3c; }
+                QFrame#NoteItemFrame { background: #2d2d2d; border: 1px solid #3c3c3c; }
+                QFrame#NoteItemFrame[pinned="true"] { border: 1px solid #4c1d95; border-left: 4px solid #f97316; }
+                QLabel#NoteTimestampLabel { color: #94a3b8; }
                 QListWidget { background: #252526; color: #d4d4d4; border: 1px solid #3c3c3c; }
                 QPushButton { background: #569cd6; }
                 QPushButton:hover { background: #3794ff; }
@@ -1322,7 +1578,11 @@ class FileManagerApp(QtWidgets.QWidget):
         else:
             extra = ""
 
-        self.setStyleSheet(base_css + extra)
+        return base_css + extra
+
+    def _apply_theme(self, theme: str) -> None:
+        self._current_theme = theme
+        self.setStyleSheet(self._get_stylesheet(theme))
         self._state["theme"] = theme
         self._write_state()
         # combobox removed; nothing to sync
