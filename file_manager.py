@@ -645,15 +645,27 @@ class FileManagerApp(QtWidgets.QWidget):
                     if category not in {"idea", "todo"}:
                         category = "idea"
                     completed = bool(item.get("completed", False))
+                    pinned = bool(item.get("pinned", False))
                     normalized_notes.append(
-                        {"content": content, "timestamp": timestamp, "category": category, "completed": completed}
+                        {
+                            "content": content,
+                            "timestamp": timestamp,
+                            "category": category,
+                            "completed": completed,
+                            "pinned": pinned,
+                        }
                     )
                 elif isinstance(item, str):
                     content = item.strip()
                     if content:
                         normalized_notes.append(
-                            {"content": content, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                             "category": "idea", "completed": False}
+                            {
+                                "content": content,
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "category": "idea",
+                                "completed": False,
+                                "pinned": False,
+                            }
                         )
         data["notes"] = normalized_notes
         font_base = data.get("font_base", DEFAULT_FONT_BASE)
