@@ -1,4 +1,57 @@
 {
-  "last_path": "",
-  "reserved": {}
+  "last_path": "C:/Users/Administrator/Desktop/新建文件夹",
+  "reserved": {},
+  "notes": [
+    {
+      "content": "faf",
+      "timestamp": "2025-09-18 02:31",
+      "category": "idea",
+      "completed": false
+    },
+    {
+      "content": "代发",
+      "timestamp": "2025-09-18 02:31",
+      "category": "todo",
+      "completed": false
+    },
+    {
+      "content": "sda",
+      "timestamp": "2025-09-18 02:21",
+      "category": "todo",
+      "completed": true
+    },
+    {
+      "content": "dasd",
+      "timestamp": "2025-09-18 02:21",
+      "category": "todo",
+      "completed": true
+    },
+    {
+      "content": "dsadas",
+      "timestamp": "2025-09-18 00:48",
+      "category": "todo",
+      "completed": true
+    },
+    {
+      "content": "dasd",
+      "timestamp": "2025-09-18 00:48",
+      "category": "todo",
+      "completed": true
+    },
+    {
+      "content": "dasda",
+      "timestamp": "2025-09-18 00:48",
+      "category": "todo",
+      "completed": true
+    },
+    {
+      "content": "d.sad.",
+      "timestamp": "2025-09-18 00:48",
+      "category": "todo",
+      "completed": false
+    }
+  ],
+  "theme": "card",
+  "win_width": 800,
+  "win_height": 792
 }
