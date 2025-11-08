@@ -14,9 +14,9 @@ def main() -> None:
     project_root = pathlib.Path(__file__).resolve().parent
     PyInstaller.__main__.run(
         [
-            str(project_root / "file_manager.py"),
+            str(project_root / "directory_manager.py"),
             "--name",
-            "file_manager",
+            "directory_manager",
             "--noconfirm",
             "--clean",
             "--onedir",
@@ -28,7 +28,7 @@ def main() -> None:
             "--specpath",
             str(project_root / "build"),
             "--icon",
-            str(project_root / "icon.ico"),
+            str(project_root / "Directory_Manager.ico"),
         ]
     )
 
