@@ -221,7 +221,7 @@ class FileManagerApp(QtWidgets.QWidget):
             QFrame#glassFrame {
                 background: rgba(255, 255, 255, 0.55);
                 border-radius: 24px;
-                border: 1px solid rgba(255, 255, 255, 0.35);
+                border: 0.5px solid rgba(255, 255, 255, 0.35);
             }
             QLineEdit {
                 border-radius: 10px;
@@ -246,8 +246,8 @@ class FileManagerApp(QtWidgets.QWidget):
             }
             QListWidget {
                 border-radius: 18px;
-                border: 1px solid rgba(255, 255, 255, 0.45);
-                background: rgba(255, 255, 255, 0.65);
+                border: 0.5px solid rgba(255, 255, 255, 0.6);
+                background: #ffffff;
                 font-size: 18px;
                 padding: 6px;
             }
@@ -255,6 +255,7 @@ class FileManagerApp(QtWidgets.QWidget):
                 height: 36px;
                 border-radius: 10px;
                 color: #1f2933;
+                background: transparent;
             }
             QListWidget::item:selected:active {
                 background: rgba(55, 148, 255, 0.9);
