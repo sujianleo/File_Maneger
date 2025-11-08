@@ -202,17 +202,11 @@ class FileManagerApp(QtWidgets.QWidget):
                 border-radius: 24px;
                 border: none;
             }
-            QFrame#glassFrame[status="paused"] {
-                background: #ffeaf4;
-            }
-            QFrame#glassFrame[status="active"] {
-                background: #f1fff4;
-            }
             QLineEdit {
                 border-radius: 10px;
                 padding: 8px 14px;
                 border: none;
-                background: #ffffff;
+                background: rgba(255, 255, 255, 0.75);
                 font-size: 20px;
                 min-height: 44px;
                 color: #1f2933;
