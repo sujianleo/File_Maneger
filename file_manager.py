@@ -221,12 +221,12 @@ class FileManagerApp(QtWidgets.QWidget):
             QFrame#glassFrame {
                 background: rgba(255, 255, 255, 0.55);
                 border-radius: 24px;
-                border: 0.5px solid rgba(255, 255, 255, 0.35);
+                border: none;
             }
             QLineEdit {
                 border-radius: 10px;
                 padding: 8px 14px;
-                border: 1px solid rgba(255, 255, 255, 0.5);
+                border: none;
                 background: rgba(255, 255, 255, 0.75);
                 font-size: 20px;
                 min-height: 44px;
@@ -246,7 +246,7 @@ class FileManagerApp(QtWidgets.QWidget):
             }
             QListWidget {
                 border-radius: 18px;
-                border: 0.5px solid rgba(255, 255, 255, 0.6);
+                border: none;
                 background: #ffffff;
                 font-size: 18px;
                 padding: 6px;
