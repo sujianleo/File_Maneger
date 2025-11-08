@@ -33,9 +33,6 @@ LANG_STRINGS: dict[str, dict[str, str]] = {
         "confirm_delete_title": "确认删除",
         "confirm_delete_message": "确定要删除以下文件夹？\n\n{items}",
         "delete_failed": "{name} 删除失败：{error}",
-        "folder_in_use_title": "文件夹被占用",
-        "folder_in_use": "“{name}” 文件夹正在被其他程序使用，请关闭相关程序后重试。",
-        "sort_failed": "无法重新排序“{name}”：{error}",
         "context_new_folder": "新建文件夹",
         "context_select_dir": "选择目录",
         "context_rename": "重命名",
@@ -67,9 +64,6 @@ LANG_STRINGS: dict[str, dict[str, str]] = {
         "confirm_delete_title": "Confirm Delete",
         "confirm_delete_message": "Are you sure you want to delete these folders?\n\n{items}",
         "delete_failed": "Failed to delete {name}: {error}",
-        "folder_in_use_title": "Folder In Use",
-        "folder_in_use": "The folder \"{name}\" is currently in use. Close related programs and try again.",
-        "sort_failed": "Could not reorder \"{name}\": {error}",
         "context_new_folder": "New Folder",
         "context_select_dir": "Choose Directory",
         "context_rename": "Rename",
@@ -103,7 +97,6 @@ class SortListWidget(QtWidgets.QListWidget):
 class FileManagerApp(QtWidgets.QWidget):
     def __init__(self) -> None:
         super().__init__()
-        self.setObjectName("mainWindow")
         self.setAcceptDrops(True)
         self.sort_paused = True
         self._state = self._load_last_state()
@@ -111,6 +104,7 @@ class FileManagerApp(QtWidgets.QWidget):
         if self.language not in LANG_STRINGS:
             self.language = "zh"
         self._setup_ui()
+        self._setup_blur_overlay()
 
         self._last_folder_list: list[str] = []
         self._timer = QtCore.QTimer(self)
@@ -149,21 +143,34 @@ class FileManagerApp(QtWidgets.QWidget):
         if folders != self._last_folder_list:
             self._refresh_list(base_path)
 
-    def _update_status_highlight(self, status: str) -> None:
-        self.glass_frame.setProperty("status", status)
-        style = self.glass_frame.style()
-        if style is None:
-            return
-        style.unpolish(self.glass_frame)
-        style.polish(self.glass_frame)
-        self.glass_frame.update()
+    def _setup_blur_overlay(self) -> None:
+        parent = self.list_widget.parentWidget()
+        self.blur_overlay = QtWidgets.QWidget(parent)
+        self._update_blur_geometry()
+        self.blur_overlay.lower()
+        self.blur_overlay.hide()
+        self.blur_overlay.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        blur = QtWidgets.QGraphicsBlurEffect()
+        blur.setBlurRadius(16)
+        self.blur_overlay.setGraphicsEffect(blur)
+        self.list_widget.installEventFilter(self)
 
-    def _show_folder_in_use_message(self, folder_name: str) -> None:
-        QtWidgets.QMessageBox.warning(
-            self,
-            self._t("folder_in_use_title"),
-            self._t("folder_in_use").format(name=folder_name),
-        )
+    def _update_blur_geometry(self) -> None:
+        self.blur_overlay.setGeometry(self.list_widget.geometry())
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if obj is self.list_widget and event.type() == QtCore.QEvent.Resize:
+            self._update_blur_geometry()
+        return super().eventFilter(obj, event)
+
+    def _show_blur(self, color: str) -> None:
+        self._update_blur_geometry()
+        self.blur_overlay.setStyleSheet(f"background: {color}; border-radius: 9px;")
+        self.blur_overlay.show()
+        self.blur_overlay.raise_()
+
+    def _hide_blur(self) -> None:
+        self.blur_overlay.hide()
 
     def _write_state(self) -> None:
         try:
@@ -190,115 +197,67 @@ class FileManagerApp(QtWidgets.QWidget):
     def _setup_ui(self) -> None:
         font = QtGui.QFont("微软雅黑", 14)
         self.setFont(font)
-        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.setStyleSheet(
             """
-            QWidget#mainWindow {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #80c3ff, stop:0.5 #d6b6ff, stop:1 #ffdee9);
-            }
-            QFrame#glassFrame {
-                background: #ffffff;
-                border-radius: 24px;
-                border: none;
-            }
+            QWidget { background: #f7fafd; }
             QLineEdit {
-                border-radius: 10px;
-                padding: 8px 14px;
-                border: none;
-                background: rgba(255, 255, 255, 0.75);
+                border-radius: 4px; padding: 5px 8px;
+                border: 1px solid #b7bec7; background: #fff;
                 font-size: 20px;
-                min-height: 44px;
-                color: #1f2933;
-            }
-            QLineEdit:focus {
-                border: none;
+                min-height: 40px;
             }
             QPushButton {
-                border-radius: 12px;
-                background: rgba(55, 148, 255, 0.85);
-                color: white;
-                padding: 10px 24px;
-                font-size: 18px;
-                font-weight: 600;
-                min-height: 44px;
-                border: none;
+                border-radius: 4px; background: #3794ff;
+                color: white; padding: 5px 16px;
+                font-size: 18px; font-weight: bold;
+                min-height: 40px;
             }
-            QPushButton:hover {
-                background: rgba(34, 101, 181, 0.85);
-                border: none;
-            }
-            QPushButton:focus {
-                border: none;
-            }
+            QPushButton:hover { background: #2265b5;}
             QListWidget {
-                border-radius: 18px;
-                border: none;
-                background: #ffffff;
-                font-size: 18px;
-                padding: 6px;
+                border-radius: 9px;
+                border: 0.7px solid #b5bac0;
+                background: #fff; font-size: 18px;
             }
             QListWidget::item {
-                height: 36px;
-                border-radius: 10px;
-                color: #1f2933;
-                background: transparent;
-                border: none;
+                height: 32px; border-radius: 5px; color: #222;
             }
             QListWidget::item:selected:active {
-                background: rgba(55, 148, 255, 0.9);
-                color: #fff;
-                border: none;
+                background: #3794ff; color: #fff;
             }
             QListWidget::item:selected:!active {
-                background: rgba(181, 198, 224, 0.8);
-                color: #1f2933;
-                border: none;
+                background: #b5c6e0; color: #222;
             }
             QListWidget::item:hover {
-                background: rgba(238, 245, 255, 0.9);
-                border: none;
-            }
-            QListWidget:focus {
-                border: none;
+                background: #eef5ff;
             }
             QScrollBar:vertical {
                 border: none;
                 background: transparent;
                 width: 10px;
-                margin: 4px;
+                margin: 1px 1px 1px 0;
                 border-radius: 10px;
             }
             QScrollBar::handle:vertical {
-                background: rgba(55, 148, 255, 0.75);
-                min-height: 40px;
+                background: #3794ff;
+                min-height: 28px;
                 border: none;
                 border-radius: 7px;
                 margin: 1px;
             }
             QScrollBar::handle:vertical:hover {
-                background: rgba(34, 101, 181, 0.8);
+                background: #2265b5;
             }
             """
         )
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(0)
-        layout.setContentsMargins(32, 32, 32, 32)
-
-        self.glass_frame = QtWidgets.QFrame()
-        self.glass_frame.setObjectName("glassFrame")
-        self.glass_frame.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.glass_frame.setLineWidth(0)
-        frame_layout = QtWidgets.QVBoxLayout(self.glass_frame)
-        frame_layout.setSpacing(24)
-        frame_layout.setContentsMargins(32, 32, 32, 32)
+        layout.setSpacing(4)
+        layout.setContentsMargins(8, 8, 8, 4)
 
         path_layout = QtWidgets.QHBoxLayout()
-        path_layout.setSpacing(12)
+        path_layout.setSpacing(4)
         self.path_edit = QtWidgets.QLineEdit()
         self.path_edit.setFont(QtGui.QFont("微软雅黑", 20))
-        self.path_edit.setFrame(False)
         self.path_edit.returnPressed.connect(self._on_path_entry)
         self.browse_btn = MyButton(self._t("browse_button"))
         self.browse_btn.setFont(QtGui.QFont("微软雅黑", 18))
@@ -306,29 +265,24 @@ class FileManagerApp(QtWidgets.QWidget):
         self.browse_btn.doubleClicked.connect(self._on_browse_double_clicked)
         path_layout.addWidget(self.path_edit)
         path_layout.addWidget(self.browse_btn)
-        frame_layout.addLayout(path_layout)
+        layout.addLayout(path_layout)
 
         self.list_widget = SortListWidget()
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.list_widget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
-        self.list_widget.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.list_widget.setLineWidth(0)
-        self.list_widget.setMidLineWidth(0)
         self.list_widget.itemDropped.connect(self._on_drop)
         self.list_widget.currentRowChanged.connect(self._on_select)
         self.list_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.itemDoubleClicked.connect(self._open_folder_in_explorer)
-        frame_layout.addWidget(self.list_widget)
+        layout.addWidget(self.list_widget)
 
-        layout.addWidget(self.glass_frame)
-
-        shadow = QtWidgets.QGraphicsDropShadowEffect(self.glass_frame)
-        shadow.setBlurRadius(32)
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self.list_widget)
+        shadow.setBlurRadius(16)
         shadow.setXOffset(0)
-        shadow.setYOffset(10)
-        shadow.setColor(QtGui.QColor(15, 23, 42, 45))
-        self.glass_frame.setGraphicsEffect(shadow)
+        shadow.setYOffset(2)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 20))
+        self.list_widget.setGraphicsEffect(shadow)
 
     def _on_browse_double_clicked(self) -> None:
         cur_w, cur_h = self.width(), self.height()
@@ -372,12 +326,9 @@ class FileManagerApp(QtWidgets.QWidget):
         row_h = self.list_widget.sizeHintForRow(0) if n else 32
         list_h = max_show * row_h + 4
         self.list_widget.setFixedHeight(list_h)
-        top_h = self.path_edit.sizeHint().height() + 24
-        bottom_h = 24
-        inner_padding = 32 * 2
-        outer_margin = 32 * 2
-        spacing = 24
-        total_h = outer_margin + inner_padding + top_h + spacing + list_h + bottom_h
+        top_h = self.path_edit.sizeHint().height() + 10 + 16
+        bottom_h = 18
+        total_h = top_h + list_h + bottom_h
         self.setFixedHeight(total_h)
         self._last_folder_list = folders
 
@@ -408,16 +359,7 @@ class FileManagerApp(QtWidgets.QWidget):
                 counter += 1
             used_names.add(new_name)
             if os.path.exists(current_path):
-                try:
-                    os.rename(current_path, new_path)
-                except PermissionError:
-                    self._show_folder_in_use_message(folder_name)
-                except OSError as exc:
-                    QtWidgets.QMessageBox.critical(
-                        self,
-                        self._t("error_title"),
-                        self._t("sort_failed").format(name=folder_name, error=exc),
-                    )
+                os.rename(current_path, new_path)
         self._refresh_list(base_path)
 
     def _create_new_folder(self) -> None:
@@ -459,8 +401,6 @@ class FileManagerApp(QtWidgets.QWidget):
                 try:
                     os.rename(old_path, new_path)
                     changed = True
-                except PermissionError:
-                    self._show_folder_in_use_message(old_name)
                 except Exception as exc:
                     QtWidgets.QMessageBox.critical(
                         self,
@@ -491,8 +431,6 @@ class FileManagerApp(QtWidgets.QWidget):
             folder_path = os.path.join(base_path, name)
             try:
                 shutil.rmtree(folder_path)
-            except PermissionError:
-                self._show_folder_in_use_message(name)
             except Exception as exc:
                 QtWidgets.QMessageBox.warning(
                     self,
@@ -539,8 +477,6 @@ class FileManagerApp(QtWidgets.QWidget):
             try:
                 os.rename(old_path, new_path)
                 self._refresh_list(base_path)
-            except PermissionError:
-                self._show_folder_in_use_message(old_name)
             except Exception as exc:
                 QtWidgets.QMessageBox.critical(
                     self, self._t("error_title"), self._t("rename_failed").format(error=exc)
@@ -548,11 +484,11 @@ class FileManagerApp(QtWidgets.QWidget):
 
     def _pause_sort(self) -> None:
         self.sort_paused = True
-        self._update_status_highlight("paused")
+        self._show_blur("rgba(255,105,180,0.10)")
 
     def _resume_sort(self) -> None:
         self.sort_paused = False
-        self._update_status_highlight("active")
+        self._show_blur("rgba(120,255,170,0.10)")
         self._confirm_sort()
 
     def _set_language(self, language: str) -> None:
