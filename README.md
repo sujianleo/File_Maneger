@@ -1,4 +1,4 @@
-# Folder Flow Organizer
+# Directory Manager
 
 This desktop application, powered by `PyQt5`, lets you reorder folders with drag-and-drop, apply tidy numbering, and capture ideas alongside your workspace.
 
@@ -27,18 +27,21 @@ Once it opens, drop a folder onto the window or paste a path into the address bo
 
 ## Build an executable
 
-You can package the project with [PyInstaller](https://pyinstaller.org/) in two ways:
+This repository is now named **Directory_Manager**, and the recommended way to
+package it is the fastest-starting *one-directory* bundle:
 
-- **Single executable**
-  ```bash
-  pyinstaller directory_manager.spec
-  ```
-  The bundled app is generated in the `dist/` directory.
-- **Directory build (faster startup)**
+- **Preferred (fast startup)**
   ```bash
   python build_dist.py
   ```
-  This creates `dist/directory_manager/`, avoiding the self-extraction delay of the one-file mode.
+  This creates `dist/directory_manager/`, so the app launches immediately
+  without the self-extraction delay of the one-file mode.
+- **Alternative single executable**
+  ```bash
+  pyinstaller directory_manager.spec
+  ```
+  A standalone executable is emitted to the `dist/` directory, but it takes
+  longer to start because PyInstaller must unpack itself first.
 
 ## License
 
