@@ -111,7 +111,6 @@ class FileManagerApp(QtWidgets.QWidget):
         if self.language not in LANG_STRINGS:
             self.language = "zh"
         self._setup_ui()
-        self._setup_blur_overlay()
 
         self._last_folder_list: list[str] = []
         self._timer = QtCore.QTimer(self)
@@ -150,34 +149,14 @@ class FileManagerApp(QtWidgets.QWidget):
         if folders != self._last_folder_list:
             self._refresh_list(base_path)
 
-    def _setup_blur_overlay(self) -> None:
-        parent = self.list_widget.parentWidget()
-        self.blur_overlay = QtWidgets.QWidget(parent)
-        self._update_blur_geometry()
-        self.blur_overlay.lower()
-        self.blur_overlay.hide()
-        self.blur_overlay.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-        blur = QtWidgets.QGraphicsBlurEffect()
-        blur.setBlurRadius(16)
-        self.blur_overlay.setGraphicsEffect(blur)
-        self.list_widget.installEventFilter(self)
-
-    def _update_blur_geometry(self) -> None:
-        self.blur_overlay.setGeometry(self.list_widget.geometry())
-
-    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
-        if obj is self.list_widget and event.type() == QtCore.QEvent.Resize:
-            self._update_blur_geometry()
-        return super().eventFilter(obj, event)
-
-    def _show_blur(self, color: str) -> None:
-        self._update_blur_geometry()
-        self.blur_overlay.setStyleSheet(f"background: {color}; border-radius: 18px;")
-        self.blur_overlay.show()
-        self.blur_overlay.raise_()
-
-    def _hide_blur(self) -> None:
-        self.blur_overlay.hide()
+    def _update_status_highlight(self, status: str) -> None:
+        self.glass_frame.setProperty("status", status)
+        style = self.glass_frame.style()
+        if style is None:
+            return
+        style.unpolish(self.glass_frame)
+        style.polish(self.glass_frame)
+        self.glass_frame.update()
 
     def _show_folder_in_use_message(self, folder_name: str) -> None:
         QtWidgets.QMessageBox.warning(
@@ -219,18 +198,27 @@ class FileManagerApp(QtWidgets.QWidget):
                     stop:0 #80c3ff, stop:0.5 #d6b6ff, stop:1 #ffdee9);
             }
             QFrame#glassFrame {
-                background: rgba(255, 255, 255, 0.55);
+                background: #ffffff;
                 border-radius: 24px;
-                border: 0.5px solid rgba(255, 255, 255, 0.35);
+                border: none;
+            }
+            QFrame#glassFrame[status="paused"] {
+                background: #ffeaf4;
+            }
+            QFrame#glassFrame[status="active"] {
+                background: #f1fff4;
             }
             QLineEdit {
                 border-radius: 10px;
                 padding: 8px 14px;
-                border: 1px solid rgba(255, 255, 255, 0.5);
-                background: rgba(255, 255, 255, 0.75);
+                border: none;
+                background: #ffffff;
                 font-size: 20px;
                 min-height: 44px;
                 color: #1f2933;
+            }
+            QLineEdit:focus {
+                border: none;
             }
             QPushButton {
                 border-radius: 12px;
@@ -240,13 +228,18 @@ class FileManagerApp(QtWidgets.QWidget):
                 font-size: 18px;
                 font-weight: 600;
                 min-height: 44px;
+                border: none;
             }
             QPushButton:hover {
                 background: rgba(34, 101, 181, 0.85);
+                border: none;
+            }
+            QPushButton:focus {
+                border: none;
             }
             QListWidget {
                 border-radius: 18px;
-                border: 0.5px solid rgba(255, 255, 255, 0.6);
+                border: none;
                 background: #ffffff;
                 font-size: 18px;
                 padding: 6px;
@@ -256,17 +249,24 @@ class FileManagerApp(QtWidgets.QWidget):
                 border-radius: 10px;
                 color: #1f2933;
                 background: transparent;
+                border: none;
             }
             QListWidget::item:selected:active {
                 background: rgba(55, 148, 255, 0.9);
                 color: #fff;
+                border: none;
             }
             QListWidget::item:selected:!active {
                 background: rgba(181, 198, 224, 0.8);
                 color: #1f2933;
+                border: none;
             }
             QListWidget::item:hover {
                 background: rgba(238, 245, 255, 0.9);
+                border: none;
+            }
+            QListWidget:focus {
+                border: none;
             }
             QScrollBar:vertical {
                 border: none;
@@ -294,6 +294,8 @@ class FileManagerApp(QtWidgets.QWidget):
 
         self.glass_frame = QtWidgets.QFrame()
         self.glass_frame.setObjectName("glassFrame")
+        self.glass_frame.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.glass_frame.setLineWidth(0)
         frame_layout = QtWidgets.QVBoxLayout(self.glass_frame)
         frame_layout.setSpacing(24)
         frame_layout.setContentsMargins(32, 32, 32, 32)
@@ -302,6 +304,7 @@ class FileManagerApp(QtWidgets.QWidget):
         path_layout.setSpacing(12)
         self.path_edit = QtWidgets.QLineEdit()
         self.path_edit.setFont(QtGui.QFont("微软雅黑", 20))
+        self.path_edit.setFrame(False)
         self.path_edit.returnPressed.connect(self._on_path_entry)
         self.browse_btn = MyButton(self._t("browse_button"))
         self.browse_btn.setFont(QtGui.QFont("微软雅黑", 18))
@@ -314,6 +317,9 @@ class FileManagerApp(QtWidgets.QWidget):
         self.list_widget = SortListWidget()
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.list_widget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+        self.list_widget.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.list_widget.setLineWidth(0)
+        self.list_widget.setMidLineWidth(0)
         self.list_widget.itemDropped.connect(self._on_drop)
         self.list_widget.currentRowChanged.connect(self._on_select)
         self.list_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -548,11 +554,11 @@ class FileManagerApp(QtWidgets.QWidget):
 
     def _pause_sort(self) -> None:
         self.sort_paused = True
-        self._show_blur("rgba(255,105,180,0.10)")
+        self._update_status_highlight("paused")
 
     def _resume_sort(self) -> None:
         self.sort_paused = False
-        self._show_blur("rgba(120,255,170,0.10)")
+        self._update_status_highlight("active")
         self._confirm_sort()
 
     def _set_language(self, language: str) -> None:
