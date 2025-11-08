@@ -7,7 +7,7 @@ This project is a desktop application built with `PyQt5` that helps users drag-a
 1. Install Python 3 and use `pip install pyqt5` to install dependencies.
 2. From the project root, run:
    ```bash
-   python file_manager.py
+   python directory_manager.py
    ```
 
 After launching, input or choose the folder path you want to manage.
@@ -31,14 +31,14 @@ There are two options using [PyInstaller](https://pyinstaller.org/):
 
 - **Single file (existing approach)**:
   ```bash
-  pyinstaller file_manager.spec
+  pyinstaller directory_manager.spec
   ```
   The executable is written into the `dist/` directory.
 - **Directory build (faster startup)**:
   ```bash
   python build_dist.py
   ```
-  This script produces a `dist/file_manager/` folder so the app can start without the one-file extraction delay.
+  This script produces a `dist/directory_manager/` folder so the app can start without the one-file extraction delay.
 
 ## License
 

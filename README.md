@@ -10,7 +10,7 @@ This desktop application, powered by `PyQt5`, lets you reorder folders with drag
    ```
 2. From the project root, launch the app:
    ```bash
-   python file_manager.py
+   python directory_manager.py
    ```
 
 Once it opens, drop a folder onto the window or paste a path into the address box to get started.
@@ -31,14 +31,14 @@ You can package the project with [PyInstaller](https://pyinstaller.org/) in two 
 
 - **Single executable**
   ```bash
-  pyinstaller file_manager.spec
+  pyinstaller directory_manager.spec
   ```
   The bundled app is generated in the `dist/` directory.
 - **Directory build (faster startup)**
   ```bash
   python build_dist.py
   ```
-  This creates `dist/file_manager/`, avoiding the self-extraction delay of the one-file mode.
+  This creates `dist/directory_manager/`, avoiding the self-extraction delay of the one-file mode.
 
 ## License
 
