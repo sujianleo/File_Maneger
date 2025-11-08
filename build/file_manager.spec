@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['C:\\Users\\Administrator\\Desktop\\File_Manager\\File_Maneger\\file_manager.py'],
+    ['C:\\Users\\Administrator\\OneDrive\\桌面\\test\\File_Maneger\\file_manager.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -32,7 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\Administrator\\Desktop\\File_Manager\\File_Maneger\\icon.ico'],
+    icon=['C:\\Users\\Administrator\\OneDrive\\桌面\\test\\File_Maneger\\icon.ico'],
 )
 coll = COLLECT(
     exe,

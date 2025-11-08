@@ -1,84 +1,8 @@
 {
-  "last_path": "C:/Users/Administrator/Desktop/新建文件夹",
-  "reserved": {
-    "C:/Users/Administrator/Desktop/新建文件夹": [
-      "05_新建文件夹 - 副本 (10)"
-    ]
-  },
-  "notes": [
-    {
-      "content": "你好",
-      "timestamp": "2025-09-21 00:47",
-      "category": "idea",
-      "completed": false,
-      "pinned": false
-    },
-    {
-      "content": "fkdlfk",
-      "timestamp": "2025-09-21 00:47",
-      "category": "idea",
-      "completed": false,
-      "pinned": false
-    },
-    {
-      "content": "faf",
-      "timestamp": "2025-09-18 02:31",
-      "category": "idea",
-      "completed": false,
-      "pinned": false
-    },
-    {
-      "content": "代发",
-      "timestamp": "2025-09-18 02:31",
-      "category": "todo",
-      "completed": true,
-      "pinned": false
-    },
-    {
-      "content": "sda",
-      "timestamp": "2025-09-18 02:21",
-      "category": "todo",
-      "completed": true,
-      "pinned": false
-    },
-    {
-      "content": "dasd",
-      "timestamp": "2025-09-18 02:21",
-      "category": "todo",
-      "completed": false,
-      "pinned": false
-    },
-    {
-      "content": "dsadas",
-      "timestamp": "2025-09-18 00:48",
-      "category": "todo",
-      "completed": false,
-      "pinned": false
-    },
-    {
-      "content": "dasd",
-      "timestamp": "2025-09-18 00:48",
-      "category": "todo",
-      "completed": true,
-      "pinned": true
-    },
-    {
-      "content": "dasda",
-      "timestamp": "2025-09-18 00:48",
-      "category": "todo",
-      "completed": true,
-      "pinned": false
-    },
-    {
-      "content": "d.sad.",
-      "timestamp": "2025-09-18 00:48",
-      "category": "todo",
-      "completed": false,
-      "pinned": false
-    }
-  ],
+  "last_path": "C:/Users/Administrator/OneDrive/桌面/su",
   "theme": "card",
-  "win_width": 603,
-  "win_height": 881,
-  "font_base": 30
+  "win_width": "603",
+  "win_height": "881",
+  "font_base": "30",
+  "language": "en"
 }
