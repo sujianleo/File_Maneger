@@ -232,6 +232,9 @@ class FileManagerApp(QtWidgets.QWidget):
                 min-height: 44px;
                 color: #1f2933;
             }
+            QLineEdit:focus {
+                border: none;
+            }
             QPushButton {
                 border-radius: 12px;
                 background: rgba(55, 148, 255, 0.85);
@@ -240,9 +243,14 @@ class FileManagerApp(QtWidgets.QWidget):
                 font-size: 18px;
                 font-weight: 600;
                 min-height: 44px;
+                border: none;
             }
             QPushButton:hover {
                 background: rgba(34, 101, 181, 0.85);
+                border: none;
+            }
+            QPushButton:focus {
+                border: none;
             }
             QListWidget {
                 border-radius: 18px;
@@ -256,17 +264,24 @@ class FileManagerApp(QtWidgets.QWidget):
                 border-radius: 10px;
                 color: #1f2933;
                 background: transparent;
+                border: none;
             }
             QListWidget::item:selected:active {
                 background: rgba(55, 148, 255, 0.9);
                 color: #fff;
+                border: none;
             }
             QListWidget::item:selected:!active {
                 background: rgba(181, 198, 224, 0.8);
                 color: #1f2933;
+                border: none;
             }
             QListWidget::item:hover {
                 background: rgba(238, 245, 255, 0.9);
+                border: none;
+            }
+            QListWidget:focus {
+                border: none;
             }
             QScrollBar:vertical {
                 border: none;
@@ -294,6 +309,8 @@ class FileManagerApp(QtWidgets.QWidget):
 
         self.glass_frame = QtWidgets.QFrame()
         self.glass_frame.setObjectName("glassFrame")
+        self.glass_frame.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.glass_frame.setLineWidth(0)
         frame_layout = QtWidgets.QVBoxLayout(self.glass_frame)
         frame_layout.setSpacing(24)
         frame_layout.setContentsMargins(32, 32, 32, 32)
@@ -302,6 +319,7 @@ class FileManagerApp(QtWidgets.QWidget):
         path_layout.setSpacing(12)
         self.path_edit = QtWidgets.QLineEdit()
         self.path_edit.setFont(QtGui.QFont("微软雅黑", 20))
+        self.path_edit.setFrame(False)
         self.path_edit.returnPressed.connect(self._on_path_entry)
         self.browse_btn = MyButton(self._t("browse_button"))
         self.browse_btn.setFont(QtGui.QFont("微软雅黑", 18))
@@ -314,6 +332,9 @@ class FileManagerApp(QtWidgets.QWidget):
         self.list_widget = SortListWidget()
         self.list_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.list_widget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+        self.list_widget.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.list_widget.setLineWidth(0)
+        self.list_widget.setMidLineWidth(0)
         self.list_widget.itemDropped.connect(self._on_drop)
         self.list_widget.currentRowChanged.connect(self._on_select)
         self.list_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
