@@ -1,4 +1,4 @@
-# Folder Sorter
+# Directory Manager
 
 This project is a desktop application built with `PyQt5` that helps users drag-and-drop reorder folders and batch rename them within a selected directory.
 
@@ -27,18 +27,21 @@ After launching, input or choose the folder path you want to manage.
 
 ## Build an executable
 
-There are two options using [PyInstaller](https://pyinstaller.org/):
+The project repository has been renamed **Directory_Manager**. For the quickest
+launching packaged build, use the *one-directory* option:
 
-- **Single file (existing approach)**:
-  ```bash
-  pyinstaller directory_manager.spec
-  ```
-  The executable is written into the `dist/` directory.
-- **Directory build (faster startup)**:
+- **Preferred (fast startup)**:
   ```bash
   python build_dist.py
   ```
-  This script produces a `dist/directory_manager/` folder so the app can start without the one-file extraction delay.
+  The script generates `dist/directory_manager/`, letting the app open instantly
+  because no extraction step is required.
+- **Alternative single-file build**:
+  ```bash
+  pyinstaller directory_manager.spec
+  ```
+  This produces an executable in `dist/`, but startup is slower while the
+  bundled archive unpacks.
 
 ## License
 
